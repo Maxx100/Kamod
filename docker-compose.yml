@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: kamod
+      POSTGRES_USER: kamod
+      POSTGRES_PASSWORD: kamod
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - meganetwork
+
   website:
     build:
       context: .
@@ -20,9 +35,11 @@ services:
       context: .
       dockerfile: ./services/database/Dockerfile
     container_name: database
+    depends_on:
+      - postgres
     ports:
-      - "127.0.0.1:6677:6677"
-      - "5002:5000"
+      - "8000:8000"
+      - "5002:8000"
     env_file:
       - ./services/database/.env
     volumes:
@@ -52,3 +69,6 @@ services:
 networks:
   meganetwork:
     driver: bridge
+
+volumes:
+  postgres_data:

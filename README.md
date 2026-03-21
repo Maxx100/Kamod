@@ -1,6 +1,10 @@
 # Kamod
 MegaKamod
 
+## Сервисы
+
+- Database service: `services/database/README.md`
+
 >  ### **Использование логгера**<br>
 
 Вот так инициализируем логгер в самом начале, используя конфигуратор из core/ (не забудьте в свой `.env` поместить поле `LOG_LEVEL`, равное `DEBUG` или `INFO`)

@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+.event-header { position: relative; border-radius: 24px; overflow: hidden; height: 360px; margin-top: 20px; background: #111; }
+.event-header img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.8); }
+.event-header-content { position: absolute; left: 24px; right: 24px; bottom: 24px; color: white; }
+.event-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px; }
+.event-meta { display: grid; gap: 10px; margin-top: 16px; color: var(--black-600); }
+@media (max-width: 900px) { .event-layout { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="event-header" id="eventHeader">
+  <img id="eventCover" src="/img/1.jpeg" alt="Обложка мероприятия">
+  <div class="event-header-content">
+    <div id="eventTags"></div>
+    <h1 id="eventTitle">Загрузка...</h1>
+    <div id="eventDateTime">—</div>
+  </div>
+</section>
+
+<section class="event-layout">
+  <div class="card">
+    <h2 style="font-size: 24px;">О мероприятии</h2>
+    <div class="event-meta">
+      <div><strong>Дата:</strong> <span id="eventDateFull">—</span></div>
+      <div><strong>Адрес:</strong> <span id="eventAddressFull">—</span></div>
+      <div><strong>Цена:</strong> <span id="eventPrice">Бесплатно</span></div>
+    </div>
+    <h3 style="margin-top:20px; font-size:20px;">Описание</h3>
+    <p id="eventDescription" style="margin-top:8px; color: var(--black-600);"></p>
+
+    <h3 style="margin-top:20px; font-size:20px;">Организатор</h3>
+    <div style="margin-top:10px; color: var(--black-600);">
+      <div id="organizerFullName">—</div>
+      <div id="organizerUniversity">—</div>
+      <div id="organizerTelegram" class="hidden"><a id="telegramLink" href="#" target="_blank"></a></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:20px;">Регистрация</h3>
+    <p id="registerInfo" style="margin:12px 0;color:var(--grey-color);">Зарегистрируйтесь, чтобы участвовать</p>
+    <button id="registerBtn" class="btn btn-primary" style="width:100%;" disabled>Зарегистрироваться</button>
+    <p id="registerStatus" style="margin-top:10px;font-size:14px;"></p>
+
+    <div class="hidden" id="organizerPanel" style="margin-top:20px;">
+      <h3 style="font-size:18px;">Участники (<span id="participantsCount">0</span>)</h3>
+      <table style="width:100%;margin-top:10px;border-collapse:collapse;">
+        <thead><tr><th align="left">ФИО</th><th align="left">Telegram</th></tr></thead>
+        <tbody id="participantsList"></tbody>
+      </table>
+      <button class="btn btn-outline" style="margin-top:10px;width:100%;" onclick="refreshParticipants()">Обновить</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const eventId = urlParams.get('id');
+let defaultCovers = null;
+
+async function fetchDefaultCovers() {
+  if (defaultCovers !== null) return defaultCovers;
+  try {
+    const response = await fetch('/api/default-covers');
+    const payload = response.ok ? await response.json() : { items: [] };
+    defaultCovers = Array.isArray(payload.items) ? payload.items : [];
+  } catch {
+    defaultCovers = [];
+  }
+  return defaultCovers;
+}
+
+function hashString(value) {
+  const raw = String(value || 'default');
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
+
+async function pickFallbackCover(seed) {
+  const covers = await fetchDefaultCovers();
+  if (!covers.length) return '/img/1.jpeg';
+  return covers[hashString(seed) % covers.length];
+}
+
+async function setCoverWithFallback(sourceUrl, seed) {
+  const coverEl = document.getElementById('eventCover');
+  const primary = sourceUrl || await pickFallbackCover(seed);
+  coverEl.onerror = async () => {
+    coverEl.onerror = null;
+    coverEl.src = await pickFallbackCover(seed);
+  };
+  coverEl.src = primary;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!eventId) { window.location.href = '/main'; return; }
+  await loadEvent(eventId);
+  checkAuthAndPermissions(eventId);
+});
+
+async function loadEvent(id) {
+  const response = await fetch(`/api/events/${id}`);
+  if (!response.ok) { document.getElementById('eventTitle').textContent = 'Ошибка загрузки'; return; }
+  const event = await response.json();
+
+  document.getElementById('eventTitle').textContent = event.title;
+  document.getElementById('eventDateTime').textContent = new Date(event.eventDate).toLocaleString('ru-RU');
+  document.getElementById('eventDateFull').textContent = new Date(event.eventDate).toLocaleString('ru-RU');
+  document.getElementById('eventAddressFull').textContent = event.address;
+  document.getElementById('eventDescription').textContent = event.description || '';
+  document.getElementById('eventPrice').textContent = event.isPaid && event.price ? `${event.price} ₽` : 'Бесплатно';
+
+  document.getElementById('eventTags').innerHTML = `<span class='event-tag blue-tag'>${event.category}</span>`;
+  await setCoverWithFallback(event.coverUrl, event.id);
+
+  document.getElementById('organizerFullName').textContent = event.organizer.fullName;
+  document.getElementById('organizerUniversity').textContent = event.organizer.university;
+  if (event.organizer.telegram) {
+    document.getElementById('organizerTelegram').classList.remove('hidden');
+    document.getElementById('telegramLink').href = `https://t.me/${event.organizer.telegram.replace('@','')}`;
+    document.getElementById('telegramLink').textContent = event.organizer.telegram;
+  }
+
+  const registerBtn = document.getElementById('registerBtn');
+  const user = JSON.parse(localStorage.getItem('user'));
+  if (user) {
+    registerBtn.disabled = false;
+    registerBtn.onclick = () => registerForEvent(id);
+    await updateRegistrationState(id, user.id);
+  }
+}
+
+function checkAuthAndPermissions(eventId) {
+  const user = JSON.parse(localStorage.getItem('user'));
+  if (!user) return;
+  fetch(`/api/events/${eventId}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } })
+    .then((res) => res.json())
+    .then((event) => {
+      if (event.organizerId === user.id) {
+        document.getElementById('organizerPanel').classList.remove('hidden');
+        refreshParticipants(eventId);
+      }
+    });
+}
+
+async function refreshParticipants(eventIdParam = eventId) {
+  const response = await fetch(`/api/events/${eventIdParam}/participants`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+  if (!response.ok) return;
+  const participants = await response.json();
+  document.getElementById('participantsCount').textContent = participants.length;
+  document.getElementById('participantsList').innerHTML = participants.map((p) => `<tr><td>${p.fullName}</td><td>${p.telegram || '—'}</td></tr>`).join('');
+}
+
+async function updateRegistrationState(eventId, userId) {
+  const token = localStorage.getItem('token');
+  if (!token || !userId) return;
+  const response = await fetch(`/api/users/${userId}/registrations`, { headers: { 'Authorization': `Bearer ${token}` } });
+  if (!response.ok) return;
+  const registrations = await response.json();
+  const isRegistered = Array.isArray(registrations) && registrations.some((row) => String(row?.event?.id) === String(eventId));
+  if (!isRegistered) return;
+
+  const registerBtn = document.getElementById('registerBtn');
+  const statusEl = document.getElementById('registerStatus');
+  registerBtn.textContent = '✓ Зарегистрированы';
+  registerBtn.className = 'btn btn-success';
+  registerBtn.disabled = true;
+  statusEl.textContent = 'Вы уже зарегистрированы на это мероприятие';
+  statusEl.style.color = 'var(--green-color)';
+}
+
+async function registerForEvent(eventId) {
+  const token = localStorage.getItem('token');
+  if (!token) { window.location.href = '/login'; return; }
+  const response = await fetch(`/api/events/${eventId}/register`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+  });
+  const result = await response.json();
+  const statusEl = document.getElementById('registerStatus');
+  if (response.ok) {
+    statusEl.textContent = '✅ Вы зарегистрированы!';
+    statusEl.style.color = 'var(--green-color)';
+    const btn = document.getElementById('registerBtn');
+    btn.textContent = '✓ Зарегистрированы';
+    btn.className = 'btn btn-success';
+    btn.disabled = true;
+    return;
+  }
+  statusEl.textContent = result.message || 'Ошибка';
+  statusEl.style.color = 'var(--red-color)';
+}
+</script>
+{% endblock %}

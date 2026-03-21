@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="page-title">Личный кабинет</h1>
+<div class="card" style="max-width:700px; margin: 0 auto 24px;">
+  <form id="profileForm">
+    <div class="form-group"><label for="fullName">ФИО</label><input id="fullName" required></div>
+    <div class="form-group"><label for="email">Email</label><input id="email" disabled></div>
+    <div class="form-group"><label for="university">ВУЗ</label><input id="university"></div>
+    <div class="form-group"><label for="faculty">Факультет</label><input id="faculty"></div>
+    <div class="form-group"><label for="telegram">Telegram</label><input id="telegram" placeholder="@username"></div>
+    <div id="profileError" class="error hidden"></div>
+    <div id="profileSuccess" class="success hidden"></div>
+    <button type="submit" class="btn btn-primary" style="width:100%;">Сохранить</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadProfile() {
+  const token = localStorage.getItem('token');
+  if (!token) { window.location.href = '/login'; return; }
+
+  const response = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+  if (!response.ok) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+    return;
+  }
+
+  const user = await response.json();
+  localStorage.setItem('user', JSON.stringify(user));
+  document.getElementById('fullName').value = user.fullName || '';
+  document.getElementById('email').value = user.email || '';
+  document.getElementById('university').value = user.university || '';
+  document.getElementById('faculty').value = user.faculty || '';
+  document.getElementById('telegram').value = user.telegram || '';
+}
+
+document.addEventListener('DOMContentLoaded', loadProfile);
+
+document.getElementById('profileForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const token = localStorage.getItem('token');
+  if (!token) { window.location.href = '/login'; return; }
+
+  const errorEl = document.getElementById('profileError');
+  const successEl = document.getElementById('profileSuccess');
+  errorEl.classList.add('hidden');
+  successEl.classList.add('hidden');
+
+  const payload = {
+    fullName: document.getElementById('fullName').value,
+    university: document.getElementById('university').value,
+    faculty: document.getElementById('faculty').value,
+    telegram: document.getElementById('telegram').value,
+  };
+
+  const response = await fetch('/api/users/me', {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+
+  if (!response.ok) {
+    errorEl.textContent = data.message || 'Ошибка сохранения';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  localStorage.setItem('user', JSON.stringify(data));
+  successEl.textContent = 'Профиль обновлён';
+  successEl.classList.remove('hidden');
+});
+</script>
+{% endblock %}

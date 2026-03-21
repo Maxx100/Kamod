@@ -4,6 +4,7 @@ from app.schemas.event import (
     EventListItemResponse,
     EventListQueryParams,
     EventListResponse,
+    EventPhotoMetaResponse,
     EventResponse,
     EventUpdateRequest,
     ParticipantListResponse,
@@ -15,7 +16,7 @@ from app.schemas.event import (
     RegistrationResponse,
 )
 from app.schemas.tag import TagResponse, TagSummary
-from app.schemas.user import UserRegisterRequest, UserResponse, UserSummary
+from app.schemas.user import UserLoginRequest, UserRegisterRequest, UserResponse, UserSummary, UserUpdateRequest
 
 __all__ = [
     "EventCreateRequest",
@@ -23,6 +24,7 @@ __all__ = [
     "EventListItemResponse",
     "EventListQueryParams",
     "EventListResponse",
+    "EventPhotoMetaResponse",
     "EventResponse",
     "EventUpdateRequest",
     "ParticipantListResponse",
@@ -34,7 +36,9 @@ __all__ = [
     "RegistrationResponse",
     "TagResponse",
     "TagSummary",
+    "UserLoginRequest",
     "UserRegisterRequest",
     "UserResponse",
     "UserSummary",
+    "UserUpdateRequest",
 ]

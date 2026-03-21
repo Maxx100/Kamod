@@ -22,6 +22,17 @@ class UserRepository:
         )
         return self.session.scalar(stmt)
 
+    def get_by_id_for_update(self, user_id: UUID) -> User | None:
+        stmt = (
+            select(User)
+            .where(
+                User.id == user_id,
+                User.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+        return self.session.scalar(stmt)
+
     def get_active_by_id(self, user_id: UUID) -> User | None:
         stmt = select(User).where(
             User.id == user_id,

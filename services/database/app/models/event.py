@@ -4,7 +4,7 @@ from datetime import datetime
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, LargeBinary, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,6 +48,21 @@ class Event(Base, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(
             "recurrence_rule IS NULL OR btrim(recurrence_rule) <> ''",
             name="chk_events_recurrence_not_blank",
+        ),
+        CheckConstraint(
+            "photo_size_bytes IS NULL OR photo_size_bytes BETWEEN 1 AND 10485760",
+            name="chk_events_photo_size_limit",
+        ),
+        CheckConstraint(
+            "photo_content_type IS NULL OR btrim(photo_content_type) <> ''",
+            name="chk_events_photo_content_type_not_blank",
+        ),
+        CheckConstraint(
+            """
+            (photo_data IS NULL AND photo_content_type IS NULL AND photo_size_bytes IS NULL)
+            OR (photo_data IS NOT NULL AND photo_content_type IS NOT NULL AND photo_size_bytes IS NOT NULL)
+            """,
+            name="chk_events_photo_fields_consistency",
         ),
         CheckConstraint(
             """
@@ -98,6 +113,9 @@ class Event(Base, TimestampMixin, SoftDeleteMixin):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    photo_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     contacts: Mapped[str] = mapped_column(Text, nullable=False)
     format: Mapped[EventFormat] = mapped_column(
         Enum(EventFormat, name="event_format", values_callable=enum_values),

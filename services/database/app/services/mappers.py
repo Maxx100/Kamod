@@ -48,6 +48,7 @@ def to_event_list_item(event: Event, registered_count: int = 0) -> EventListItem
         max_participants=event.max_participants,
         registered_count=registered_count,
         tag_slugs=[tag.slug for tag in event.tags],
+        has_photo=event.photo_data is not None,
     )
 
 
@@ -79,6 +80,7 @@ def to_event_response(event: Event, registered_count: int = 0) -> EventResponse:
         creator=to_user_summary(event.creator) if event.creator else None,
         tags=[to_tag_summary(tag) for tag in event.tags],
         tag_slugs=[tag.slug for tag in event.tags],
+        has_photo=event.photo_data is not None,
     )
 
 

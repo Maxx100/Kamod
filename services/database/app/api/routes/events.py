@@ -1,13 +1,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 
 from app.api.dependencies import CurrentUserId, EventServiceDep, RegistrationServiceDep
 from app.schemas.event import (
     EventCreateRequest,
     EventListQueryParams,
     EventListResponse,
+    EventPhotoMetaResponse,
     EventResponse,
     EventUpdateRequest,
     ParticipantListResponse,
@@ -70,6 +71,36 @@ def get_event(
     service: EventServiceDep,
 ) -> EventResponse:
     return service.get_event(event_id)
+
+
+@router.post("/{event_id}/photo", response_model=EventPhotoMetaResponse)
+async def upload_event_photo(
+    event_id: UUID,
+    current_user_id: CurrentUserId,
+    service: EventServiceDep,
+    photo: UploadFile = File(...),
+) -> EventPhotoMetaResponse:
+    photo_bytes = await photo.read()
+    updated_event = service.upload_event_photo(
+        event_id,
+        current_user_id,
+        content_type=photo.content_type or "application/octet-stream",
+        data=photo_bytes,
+    )
+    return EventPhotoMetaResponse(
+        has_photo=updated_event.has_photo,
+        content_type=photo.content_type,
+        size_bytes=len(photo_bytes),
+    )
+
+
+@router.get("/{event_id}/photo")
+def get_event_photo(
+    event_id: UUID,
+    service: EventServiceDep,
+) -> Response:
+    content_type, photo_data = service.get_event_photo(event_id)
+    return Response(content=photo_data, media_type=content_type)
 
 
 @router.post("/{event_id}/registrations", response_model=RegistrationResponse)

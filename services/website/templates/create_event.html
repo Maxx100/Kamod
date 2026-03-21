@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="page-title">Создать мероприятие</h1>
+<p class="page-subtitle">Заполните данные и опубликуйте событие</p>
+
+<div class="card" style="max-width:700px; margin: 0 auto 24px;">
+  <form id="createEventForm">
+    <div class="form-group"><label for="title">Название</label><input id="title" required></div>
+    <div class="form-group">
+      <label for="category">Категория</label>
+      <select id="category" required>
+        <option value="hackathon">Хакатон</option>
+        <option value="conference">Конференция</option>
+        <option value="workshop">Мастер-класс</option>
+        <option value="meetup">Митап</option>
+        <option value="competition">Конкурс</option>
+        <option value="other">Другое</option>
+      </select>
+    </div>
+    <div class="form-group"><label for="eventDate">Дата и время</label><input id="eventDate" type="datetime-local" required></div>
+    <div class="form-group"><label for="address">Адрес</label><input id="address" required></div>
+    <div class="form-group"><label for="description">Описание</label><textarea id="description" required></textarea></div>
+    <div class="form-group"><label for="eventImage">Обложка (до 10 МБ)</label><input type="file" id="eventImage" accept="image/*"></div>
+    <div class="form-group"><label><input type="checkbox" id="isPaid"> Платное мероприятие</label></div>
+    <div class="form-group hidden" id="priceGroup"><label for="price">Цена (₽)</label><input id="price" type="number" min="0"></div>
+    <div id="formError" class="error hidden"></div>
+    <div id="formSuccess" class="success hidden"></div>
+    <button type="submit" class="btn btn-primary" style="width:100%;">Опубликовать</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const user = JSON.parse(localStorage.getItem('user'));
+  if (!user) {
+    window.location.href = '/login';
+    return;
+  }
+  document.getElementById('isPaid').addEventListener('change', (e) => {
+    document.getElementById('priceGroup').classList.toggle('hidden', !e.target.checked);
+  });
+});
+
+document.getElementById('createEventForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('formError');
+  const successEl = document.getElementById('formSuccess');
+  errorEl.classList.add('hidden');
+  successEl.classList.add('hidden');
+
+  const imageInput = document.getElementById('eventImage');
+  const file = imageInput.files && imageInput.files[0] ? imageInput.files[0] : null;
+  if (file && file.size > 10 * 1024 * 1024) {
+    errorEl.textContent = 'Размер изображения должен быть не больше 10 МБ';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('title', document.getElementById('title').value);
+  formData.append('category', document.getElementById('category').value);
+  formData.append('eventDate', document.getElementById('eventDate').value);
+  formData.append('address', document.getElementById('address').value);
+  formData.append('description', document.getElementById('description').value);
+  formData.append('isPaid', String(document.getElementById('isPaid').checked));
+  formData.append('price', document.getElementById('isPaid').checked ? (document.getElementById('price').value || '0') : '0');
+  if (file) formData.append('image', file);
+
+  try {
+    const token = localStorage.getItem('token');
+    const response = await fetch('/api/events', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
+    const payload = await response.json();
+    if (!response.ok) {
+      errorEl.textContent = payload.message || 'Ошибка создания';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    successEl.textContent = 'Мероприятие создано';
+    successEl.classList.remove('hidden');
+    setTimeout(() => window.location.href = `/event?id=${payload.id}`, 800);
+  } catch {
+    errorEl.textContent = 'Ошибка соединения';
+    errorEl.classList.remove('hidden');
+  }
+});
+</script>
+{% endblock %}

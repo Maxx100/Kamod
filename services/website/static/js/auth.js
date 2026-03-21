@@ -3,13 +3,15 @@ function updateAuthUI() {
   const user = JSON.parse(localStorage.getItem('user'));
   const authButtons = document.getElementById('authButtons');
   const createEventBtn = document.getElementById('createEventBtn');
+  const profileNavLink = document.getElementById('profileNavLink');
   
   if (!authButtons) return;
   
   if (user) {
     // Пользователь авторизован
+    const firstName = (user.fullName || 'Пользователь').split(' ')[0];
     authButtons.innerHTML = `
-      <span style="font-weight: 500;">👋 ${user.fullName.split(' ')[0]}</span>
+      <span style="font-weight: 500;">👋 ${firstName}</span>
       <button class="btn btn-outline" onclick="logout()">Выйти</button>
     `;
     
@@ -17,15 +19,21 @@ function updateAuthUI() {
     if (createEventBtn) {
       createEventBtn.classList.remove('hidden');
     }
+    if (profileNavLink) {
+      profileNavLink.classList.remove('hidden');
+    }
   } else {
     // Пользователь не авторизован
     authButtons.innerHTML = `
-      <a href="login.html" class="btn btn-outline">Войти</a>
-      <a href="register.html" class="btn btn-primary">Регистрация</a>
+      <a href="/login" class="btn btn-outline">Войти</a>
+      <a href="/register" class="btn btn-primary">Регистрация</a>
     `;
     
     if (createEventBtn) {
       createEventBtn.classList.add('hidden');
+    }
+    if (profileNavLink) {
+      profileNavLink.classList.add('hidden');
     }
   }
 }
@@ -34,7 +42,7 @@ function updateAuthUI() {
 function logout() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
-  window.location.href = 'index.html';
+  window.location.href = '/main';
 }
 
 // Инициализация при загрузке страницы

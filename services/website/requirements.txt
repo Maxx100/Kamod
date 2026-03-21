@@ -1,1 +1,8 @@
 segno
+flask
+fastapi
+uvicorn
+httpx
+PyJWT
+email-validator
+python-multipart

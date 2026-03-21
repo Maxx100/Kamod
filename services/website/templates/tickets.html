@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="page-title">Мои билеты</h1>
+<p class="page-subtitle">Ваши регистрации на мероприятия</p>
+<div class="filters" style="margin-bottom: 20px;">
+  <button class="btn btn-outline tab active" data-filter="all">Все</button>
+  <button class="btn btn-outline tab" data-filter="upcoming">Предстоящие</button>
+  <button class="btn btn-outline tab" data-filter="past">Прошедшие</button>
+</div>
+<div class="events-grid" id="ticketsGrid"></div>
+<div id="emptyState" class="card hidden" style="text-align:center;">У вас пока нет билетов</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const user = JSON.parse(localStorage.getItem('user'));
+  if (!user) { window.location.href = '/login'; return; }
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
+      tab.classList.add('active');
+      loadTickets(tab.dataset.filter);
+    });
+  });
+  loadTickets('all');
+});
+
+function hashString(value) {
+  const raw = String(value || 'default');
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
+
+function getDefaultCoverById(eventId) {
+  const covers = ['/img/1.jpeg', '/img/2.jpeg', '/img/3.jpeg', '/img/4.jpeg', '/img/5.jpeg', '/img/6.jpeg'];
+  return covers[hashString(eventId) % covers.length];
+}
+
+function resolveEventCover(event) {
+  return event.coverUrl || getDefaultCoverById(event.id);
+}
+
+async function loadTickets(filter = 'all') {
+  const grid = document.getElementById('ticketsGrid');
+  const emptyState = document.getElementById('emptyState');
+  const user = JSON.parse(localStorage.getItem('user'));
+  const token = localStorage.getItem('token');
+
+  const response = await fetch(`/api/users/${user.id}/registrations`, { headers: { 'Authorization': `Bearer ${token}` } });
+  if (!response.ok) {
+    grid.innerHTML = '<div class="card">Ошибка загрузки</div>';
+    return;
+  }
+
+  let registrations = await response.json();
+  const now = new Date();
+  if (filter === 'upcoming') registrations = registrations.filter((row) => new Date(row.event.eventDate) > now);
+  if (filter === 'past') registrations = registrations.filter((row) => new Date(row.event.eventDate) <= now);
+
+  if (!registrations.length) {
+    grid.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    return;
+  }
+  emptyState.classList.add('hidden');
+
+  grid.innerHTML = registrations.map((reg) => {
+    const event = reg.event;
+    const coverUrl = resolveEventCover(event);
+    const isPast = new Date(event.eventDate) <= now;
+    return `
+      <article class="event-card">
+        <a href="/event?id=${event.id}">
+          <div class="event-image-wrapper"><img class="event-image" src="${coverUrl}" alt="${event.title}" onerror="this.onerror=null;this.src='${getDefaultCoverById(event.id)}'"></div>
+          <div class="event-name">${event.title}</div>
+          <div class="event-info"><span>${new Date(event.eventDate).toLocaleString('ru-RU')}</span></div>
+        </a>
+        <div style="padding: 0 16px 16px; display:flex; gap:8px;">
+          <a class="btn btn-primary" href="/event?id=${event.id}">Подробнее</a>
+          ${!isPast ? `<button class="btn btn-danger" onclick="cancelRegistration('${reg.id}','${event.id}')">Отмена</button>` : ''}
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+async function cancelRegistration(registrationId, eventId) {
+  const token = localStorage.getItem('token');
+  const response = await fetch(`/api/events/${eventId}/registration/${registrationId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+  if (response.ok) {
+    const active = document.querySelector('.tab.active')?.dataset.filter || 'all';
+    loadTickets(active);
+  }
+}
+</script>
+{% endblock %}

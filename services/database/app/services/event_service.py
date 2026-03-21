@@ -22,6 +22,8 @@ from app.services.telegram_service import TelegramService
 
 
 class EventService:
+    MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024
+
     def __init__(self, session: Session) -> None:
         self.session = session
         self.events = EventRepository(session)
@@ -194,6 +196,43 @@ class EventService:
             offset=params.offset,
             total=total,
         )
+
+    def upload_event_photo(
+        self,
+        event_id: UUID,
+        current_user_id: UUID,
+        *,
+        content_type: str,
+        data: bytes,
+    ) -> EventResponse:
+        if not data:
+            raise UnprocessableError("Photo file is empty")
+        if len(data) > self.MAX_PHOTO_SIZE_BYTES:
+            raise UnprocessableError("Photo size must be <= 10MB")
+        if not content_type.startswith("image/"):
+            raise UnprocessableError("Only image files are allowed")
+
+        with self.session.begin():
+            event = self.events.get_for_update(event_id)
+            if event is None:
+                raise NotFoundError("Event not found")
+
+            self._ensure_creator_access(event, current_user_id)
+
+            event.photo_data = data
+            event.photo_content_type = content_type
+            event.photo_size_bytes = len(data)
+            self.session.flush()
+
+        return self.get_event(event_id)
+
+    def get_event_photo(self, event_id: UUID) -> tuple[str, bytes]:
+        event = self.events.get_by_id(event_id)
+        if event is None:
+            raise NotFoundError("Event not found")
+        if event.photo_data is None or event.photo_content_type is None:
+            raise NotFoundError("Event photo not found")
+        return event.photo_content_type, bytes(event.photo_data)
 
     def _resolve_tags(self, tag_slugs: list[str]):
         if not tag_slugs:

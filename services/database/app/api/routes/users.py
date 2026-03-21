@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.dependencies import CurrentUserId, EventServiceDep, RegistrationServiceDep, UserServiceDep
 from app.schemas.event import CreatedEventsQueryParams, EventListResponse, RegisteredEventListResponse, RegisteredEventsQueryParams
-from app.schemas.user import UserResponse
+from app.schemas.user import UserResponse, UserUpdateRequest
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -18,6 +18,16 @@ def get_user(
     service: UserServiceDep,
 ) -> UserResponse:
     return service.get_user(user_id, current_user_id)
+
+
+@router.patch("/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: UUID,
+    payload: UserUpdateRequest,
+    current_user_id: CurrentUserId,
+    service: UserServiceDep,
+) -> UserResponse:
+    return service.update_user(user_id, current_user_id, payload)
 
 
 @router.get("/{user_id}/registered-events", response_model=RegisteredEventListResponse)

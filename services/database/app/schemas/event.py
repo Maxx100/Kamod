@@ -102,6 +102,7 @@ class EventListItemResponse(APIModel):
     max_participants: int | None = None
     registered_count: int = 0
     tag_slugs: list[SlugStr] = Field(default_factory=list)
+    has_photo: bool = False
 
 
 class EventListResponse(OffsetPagination):
@@ -133,6 +134,13 @@ class EventResponse(TimestampedResponse):
     creator: UserSummary | None = None
     tags: list[TagSummary] = Field(default_factory=list)
     tag_slugs: list[SlugStr] = Field(default_factory=list)
+    has_photo: bool = False
+
+
+class EventPhotoMetaResponse(APIModel):
+    has_photo: bool
+    content_type: str | None = None
+    size_bytes: int | None = None
 
 
 class RegistrationResponse(TimestampedResponse):

@@ -22,7 +22,7 @@ services:
       dockerfile: ./services/database/Dockerfile
     container_name: database
     ports:
-      - "6677:6677"
+      - "127.0.0.1:6677:6677"
     env_file:
       - ./services/database/.env
     volumes:
@@ -39,7 +39,7 @@ services:
       dockerfile: ./services/tgbot/Dockerfile
     container_name: tgbot
     ports:
-      - "8890:8890"
+      - "127.0.0.1:8890:8890"
     env_file:
       - ./services/tgbot/.env
     volumes:

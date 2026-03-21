@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     service_name: str = "event-service"
     port: int = 8000
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/kamod"
+    database_url: str
 
     model_config = SettingsConfigDict(
         env_file=".env",

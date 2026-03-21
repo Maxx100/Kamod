@@ -1,17 +1,9 @@
 # Kamod
 MegaKamod
 
-## Локальная PostgreSQL БД
+## Сервисы
 
-В `docker-compose.yml` данные PostgreSQL теперь сохраняются в папку проекта:
-
-`./data/postgres`
-
-Внутри контейнера это смонтировано в:
-
-`/var/lib/postgresql/data`
-
-Если раньше БД поднималась через именованный Docker volume, данные автоматически в новую папку не переедут. Для нового запуска достаточно создать директорию `data/postgres` и заново поднять `postgres`.
+- Database service: [services/database/README.md](/home/alexander/Projects/Kamod/services/database/README.md)
 
 >  ### **Использование логгера**<br>
 

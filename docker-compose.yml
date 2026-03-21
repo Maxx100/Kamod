@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  website:
+    build:
+      context: .
+      dockerfile: ./services/website/Dockerfile
+    container_name: website
+    ports:
+      - "80:80"
+    env_file:
+      - ./services/website/.env
+    volumes:
+      - ./services/website/logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - meganetwork
+
+  database:
+    build:
+      context: .
+      dockerfile: ./services/database/Dockerfile
+    container_name: database
+    env_file:
+      - ./services/database/.env
+    volumes:
+      - ./services/database/logs:/app/logs
+      - ./sites:/app/sites
+      - ./data:/data
+    restart: unless-stopped
+    networks:
+      - meganetwork
+  
+  tgbot:
+    build:
+      context: .
+      dockerfile: ./services/tgbot/Dockerfile
+    container_name: tgbot
+    env_file:
+      - ./services/tgbot/.env
+    volumes:
+      - ./services/tgbot/logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - meganetwork
+
+networks:
+  meganetwork:
+    driver: bridge

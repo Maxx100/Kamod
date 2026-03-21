@@ -27,7 +27,6 @@ services:
       - ./services/database/.env
     volumes:
       - ./services/database/logs:/app/logs
-      - ./sites:/app/sites
       - ./data:/data
     restart: unless-stopped
     networks:

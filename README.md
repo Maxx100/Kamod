@@ -3,7 +3,7 @@ MegaKamod
 
 ## Сервисы
 
-- Database service: [services/database/README.md](/home/alexander/Projects/Kamod/services/database/README.md)
+- Database service: `services/database/README.md`
 
 >  ### **Использование логгера**<br>
 

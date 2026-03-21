@@ -9,7 +9,7 @@ FastAPI-сервис для пользователей, событий, реги
 - Alembic миграции
 - PostgreSQL как основная БД
 
-Source of truth по схеме БД: Alembic миграции в [`alembic/versions`](/home/alexander/Projects/Kamod/services/database/alembic/versions).
+Source of truth по схеме БД: Alembic миграции в `alembic/versions`.
 
 ## Основные сущности
 
@@ -151,8 +151,8 @@ Source of truth по схеме БД: Alembic миграции в [`alembic/vers
 
 Скопируйте:
 
-- [`.env.example`](/home/alexander/Projects/Kamod/.env.example) -> `.env`
-- [`services/database/.env.example`](/home/alexander/Projects/Kamod/services/database/.env.example) -> `services/database/.env`
+- `.env.example` -> `.env`
+- `services/database/.env.example` -> `services/database/.env`
 
 Заполнять реальные секреты нужно только в локальных `.env`.
 
@@ -160,11 +160,11 @@ Source of truth по схеме БД: Alembic миграции в [`alembic/vers
 
 Живая PostgreSQL data dir:
 
-- [`data/postgres`](/home/alexander/Projects/Kamod/data/postgres)
+- `data/postgres`
 
 SQL-бэкапы:
 
-- [`data/backups`](/home/alexander/Projects/Kamod/data/backups)
+- `data/backups`
 
 ### 3. Запуск
 
@@ -186,8 +186,8 @@ docker compose up -d database
 
 Ключевые миграции:
 
-- [`0001_create_event_service_schema.py`](/home/alexander/Projects/Kamod/services/database/alembic/versions/0001_create_event_service_schema.py)
-- [`0002_add_telegram_notification_jobs.py`](/home/alexander/Projects/Kamod/services/database/alembic/versions/0002_add_telegram_notification_jobs.py)
+- `alembic/versions/0001_create_event_service_schema.py`
+- `alembic/versions/0002_add_telegram_notification_jobs.py`
 
 ## Примечания
 

@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Регистрация — СТУДEVENTS</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    @font-face {
+      font-family: 'GolosText';
+      font-weight: 1 999;
+      src: url('https://cdn.itmo.pro/fonts/Golos-Text_VF.ttf') format('truetype');
+    }
+    @font-face {
+      font-family: 'ALS Gorizont Variable';
+      font-weight: 1 999;
+      src: url('https://cdn.itmo.pro/fonts/ALS%20Gorizont%20Variable.ttf') format('truetype');
+    }
+
+    :root {
+      --white-color: #fff;
+      --black-color: #000;
+      --link-color: #254ddd;
+      --primary-color: #0b68fe;
+      --red-color: #d2342d;
+      --grey-color: #8e92a2;
+      --light-grey-color: #f5f6fa;
+      --black-300: #a3a6af;
+      --black-600: #37394b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html {
+      font-size: 16px;
+      font-family: 'GolosText', sans-serif;
+      background: var(--white-color);
+      color: var(--black-color);
+      min-height: 100vh;
+    }
+    h1, h2, h3, h4 {
+      font-family: 'ALS Gorizont Variable', sans-serif;
+      font-weight: 700;
+    }
+    h2 { font-size: 28px; line-height: 52px; font-weight: 750; }
+    p { font-size: 16px; line-height: 24px; }
+    a { color: var(--link-color); text-decoration: none; }
+
+    .header {
+      display: flex;
+      width: 100%;
+      max-width: 1192px;
+      height: 72px;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--black-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .container {
+      max-width: 1208px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+
+    .form-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 72px - 80px);
+      padding: 40px 16px;
+    }
+
+    .form-card {
+      width: 100%;
+      max-width: 560px;
+      background: var(--white-color);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .form-title {
+      text-align: center;
+      margin-bottom: 32px;
+      color: var(--black-color);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .form-grid .form-group.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .form-group {
+      margin-bottom: 0;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: var(--black-600);
+      font-size: 14px;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--black-300);
+      border-radius: 12px;
+      font-size: 16px;
+      font-family: 'GolosText', sans-serif;
+      transition: border-color 0.2s;
+      background: var(--white-color);
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(11,104,254,0.1);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'GolosText', sans-serif;
+      width: 100%;
+      margin-top: 8px;
+    }
+    .btn-primary {
+      background: var(--black-color);
+      color: var(--white-color);
+    }
+    .btn-primary:hover {
+      background: var(--primary-color);
+    }
+
+    .form-footer {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 14px;
+      color: var(--black-600);
+    }
+    .form-footer a {
+      font-weight: 500;
+    }
+
+    .error-message,
+    .success-message {
+      font-size: 14px;
+      margin-top: 8px;
+      display: none;
+    }
+    .error-message { color: var(--red-color); }
+    .success-message { color: var(--green-color); }
+
+    @media (max-width: 768px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 576px) {
+      .form-card { padding: 24px; }
+      h2 { font-size: 24px; line-height: 40px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <a href="index.html" class="logo">
+      <span>🎓</span> СТУДEVENTS
+    </a>
+  </header>
+
+  <main class="container">
+    <div class="form-wrapper">
+      <div class="form-card">
+        <h2 class="form-title">Регистрация</h2>
+        <form id="registerForm">
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label for="fullName">ФИО *</label>
+              <input type="text" id="fullName" name="fullName" required placeholder="Иванов Иван Иванович">
+            </div>
+            <div class="form-group">
+              <label for="email">Email *</label>
+              <input type="email" id="email" name="email" required placeholder="example@university.ru">
+            </div>
+            <div class="form-group">
+              <label for="password">Пароль *</label>
+              <input type="password" id="password" name="password" required minlength="8" placeholder="Минимум 8 символов">
+            </div>
+            <div class="form-group">
+              <label for="university">ВУЗ *</label>
+              <input type="text" id="university" name="university" required placeholder="Название университета">
+            </div>
+            <div class="form-group">
+              <label for="faculty">Факультет *</label>
+              <input type="text" id="faculty" name="faculty" required placeholder="Название факультета">
+            </div>
+            <div class="form-group">
+              <label for="course">Курс *</label>
+              <select id="course" name="course" required>
+                <option value="">Выберите курс</option>
+                <option value="1">1 курс</option>
+                <option value="2">2 курс</option>
+                <option value="3">3 курс</option>
+                <option value="4">4 курс</option>
+                <option value="5">5 курс и выше</option>
+              </select>
+            </div>
+            <div class="form-group full-width">
+              <label for="telegram">Ник в Telegram</label>
+              <input type="text" id="telegram" name="telegram" placeholder="@username">
+            </div>
+          </div>
+          
+          <div class="error-message" id="registerError"></div>
+          <div class="success-message" id="registerSuccess"></div>
+          
+          <button type="submit" class="btn btn-primary">Зарегистрироваться</button>
+        </form>
+        <p class="form-footer">
+          Уже есть аккаунт? <a href="login.html">Войти</a>
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/auth.js"></script>
+  <script>
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = {
+        fullName: document.getElementById('fullName').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+        university: document.getElementById('university').value,
+        faculty: document.getElementById('faculty').value,
+        course: document.getElementById('course').value,
+        telegram: document.getElementById('telegram').value
+      };
+      
+      try {
+        const response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+          document.getElementById('registerSuccess').textContent = '✅ Регистрация успешна! Перенаправление...';
+          document.getElementById('registerSuccess').style.display = 'block';
+          setTimeout(() => window.location.href = 'login.html', 2000);
+        } else {
+          const error = await response.json();
+          document.getElementById('registerError').textContent = error.message || 'Ошибка регистрации';
+          document.getElementById('registerError').style.display = 'block';
+        }
+      } catch (err) {
+        document.getElementById('registerError').textContent = 'Ошибка соединения';
+        document.getElementById('registerError').style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

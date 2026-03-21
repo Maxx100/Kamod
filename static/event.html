@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мероприятие — СТУДEVENTS</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    @font-face {
+      font-family: 'GolosText';
+      font-weight: 1 999;
+      src: url('https://cdn.itmo.pro/fonts/Golos-Text_VF.ttf') format('truetype');
+    }
+    @font-face {
+      font-family: 'ALS Gorizont Variable';
+      font-weight: 1 999;
+      src: url('https://cdn.itmo.pro/fonts/ALS%20Gorizont%20Variable.ttf') format('truetype');
+    }
+
+    :root {
+      --white-color: #fff;
+      --black-color: #000;
+      --link-color: #254ddd;
+      --primary-color: #0b68fe;
+      --orange-color: #ee8423;
+      --red-color: #d2342d;
+      --green-color: #03ad3f;
+      --grey-color: #8e92a2;
+      --light-grey-color: #f5f6fa;
+      --black-300: #a3a6af;
+      --black-600: #37394b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html {
+      font-size: 16px;
+      font-family: 'GolosText', sans-serif;
+      background: var(--white-color);
+      color: var(--black-color);
+      min-height: 100vh;
+    }
+    h1, h2, h3, h4 {
+      font-family: 'ALS Gorizont Variable', sans-serif;
+      font-weight: 700;
+    }
+    h1 { font-size: 32px; line-height: 48px; font-weight: 750; }
+    h2 { font-size: 28px; line-height: 52px; font-weight: 750; }
+    h3 { font-size: 24px; font-weight: 400; line-height: 38px; }
+    p { font-size: 16px; line-height: 24px; }
+    a { color: var(--link-color); text-decoration: none; }
+
+    .header {
+      display: flex;
+      width: 100%;
+      max-width: 1192px;
+      height: 72px;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--black-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .container {
+      max-width: 1208px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+
+    .event-header {
+      position: relative;
+      height: 400px;
+      border-radius: 32px;
+      overflow: hidden;
+      margin: 32px 0;
+      background: linear-gradient(180deg, transparent 62%, rgba(0,0,0,0.7));
+    }
+    .event-cover {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: -1;
+    }
+    .event-header-content {
+      position: absolute;
+      bottom: 40px;
+      left: 40px;
+      right: 40px;
+      max-width: 992px;
+      color: var(--white-color);
+    }
+    .event-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--white-color);
+      background: var(--primary-color);
+    }
+    .pink-tag { background: #ef85b4; }
+    .lilac-tag { background: #8373b3; }
+    .blue-tag { background: #008dcf; }
+
+    .event-info-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--grey-color);
+      font-size: 18px;
+      margin-top: 8px;
+    }
+
+    .event-detail {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 32px;
+      margin: 32px 0;
+    }
+    @media (max-width: 992px) {
+      .event-detail { grid-template-columns: 1fr; }
+    }
+
+    .event-main {
+      background: var(--white-color);
+      padding: 32px;
+      border-radius: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .event-meta {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin: 24px 0;
+      padding: 24px;
+      background: var(--light-grey-color);
+      border-radius: 16px;
+    }
+    .event-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--black-600);
+      font-size: 14px;
+    }
+
+    .event-description {
+      margin: 32px 0;
+      line-height: 1.8;
+    }
+
+    .organizer-card {
+      background: var(--light-grey-color);
+      padding: 24px;
+      border-radius: 16px;
+      margin: 32px 0;
+    }
+    .organizer-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .organizer-avatar {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--white-color);
+      font-weight: 700;
+      font-size: 24px;
+    }
+    .organizer-name {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .organizer-university {
+      color: var(--black-300);
+      font-size: 14px;
+    }
+
+    .event-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .register-card,
+    .participants-card {
+      background: var(--white-color);
+      padding: 24px;
+      border-radius: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'GolosText', sans-serif;
+      width: 100%;
+    }
+    .btn-primary {
+      background: var(--black-color);
+      color: var(--white-color);
+    }
+    .btn-primary:hover { background: var(--primary-color); }
+    .btn-success {
+      background: var(--green-color);
+      color: var(--white-color);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .participants-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    .participants-table th,
+    .participants-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--light-grey-color);
+      font-size: 14px;
+    }
+    .participants-table th {
+      font-weight: 600;
+      color: var(--black-600);
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 768px) {
+      .event-header { height: 300px; border-radius: 0; }
+      .event-header-content { bottom: 24px; left: 16px; right: 16px; }
+      .event-meta { grid-template-columns: 1fr; }
+      h1 { font-size: 26px; line-height: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <a href="index.html" class="logo">
+      <span>🎓</span> СТУДEVENTS
+    </a>
+    
+  </header>
+
+  <main class="container">
+    <!-- Event Header -->
+    <div class="event-header">
+      <img class="event-cover" id="eventCover" src="" alt="">
+      <div class="event-header-content">
+        <div class="event-tags" id="eventTags"></div>
+        <h1 id="eventTitle">Загрузка...</h1>
+        <div class="event-info-bar">
+          <span id="eventDateTime">—</span>
+          <span>•</span>
+          <span id="eventAddress">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Detail -->
+    <div class="event-detail">
+      <div class="event-main">
+        <div class="event-meta">
+          <div class="event-meta-item">
+            <span>📅</span>
+            <span id="eventDateFull">—</span>
+          </div>
+          <div class="event-meta-item">
+            <span>📍</span>
+            <span id="eventAddressFull">—</span>
+          </div>
+          <div class="event-meta-item">
+            <span>👤</span>
+            <span>Организатор: <strong id="organizerName">—</strong></span>
+          </div>
+          <div class="event-meta-item">
+            <span>🎫</span>
+            <span id="eventPrice">Бесплатно</span>
+          </div>
+        </div>
+
+        <h3>Описание</h3>
+        <div class="event-description" id="eventDescription">Загрузка...</div>
+
+        <div class="organizer-card">
+          <h3>Организатор</h3>
+          <div class="organizer-header">
+            <div class="organizer-avatar" id="organizerAvatar">?</div>
+            <div>
+              <div class="organizer-name" id="organizerFullName">—</div>
+              <div class="organizer-university" id="organizerUniversity">—</div>
+              <div id="organizerTelegram" class="hidden">
+                <a id="telegramLink" href="#" target="_blank">@username</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="event-sidebar">
+        <div class="register-card">
+          <h3>Регистрация</h3>
+          <p id="registerInfo" style="margin: 16px 0; color: var(--grey-color);">
+            Зарегистрируйтесь, чтобы участвовать
+          </p>
+          <button id="registerBtn" class="btn btn-primary" disabled>
+            Зарегистрироваться
+          </button>
+          <p id="registerStatus" style="margin-top: 12px; font-size: 14px;"></p>
+        </div>
+
+        <div class="participants-card hidden" id="organizerPanel">
+          <h3>Участники (<span id="participantsCount">0</span>)</h3>
+          <div style="max-height: 280px; overflow-y: auto;">
+            <table class="participants-table">
+              <thead>
+                <tr>
+                  <th>ФИО</th>
+                  <th>ВУЗ</th>
+                  <th>Telegram</th>
+                </tr>
+              </thead>
+              <tbody id="participantsList"></tbody>
+            </table>
+          </div>
+          <button class="btn btn-primary" style="margin-top: 16px;" onclick="refreshParticipants()">
+            Обновить
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/auth.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const eventId = urlParams.get('id');
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!eventId) { window.location.href = 'index.html'; return; }
+      await loadEvent(eventId);
+      checkAuthAndPermissions(eventId);
+    });
+
+    async function loadEvent(id) {
+      try {
+        const response = await fetch(`/api/events/${id}`);
+        if (!response.ok) throw new Error('Мероприятие не найдено');
+        const event = await response.json();
+
+        document.getElementById('eventTitle').textContent = event.title;
+        document.getElementById('eventDateTime').textContent = formatDate(event.eventDate);
+        document.getElementById('eventDateFull').textContent = formatDateLong(event.eventDate);
+        document.getElementById('eventAddress').textContent = truncate(event.address, 40);
+        document.getElementById('eventAddressFull').textContent = event.address;
+        document.getElementById('eventDescription').textContent = event.description;
+
+        // Tags
+        const tagsEl = document.getElementById('eventTags');
+        const categories = {
+          hackathon: { label: 'Хакатон', class: 'pink-tag' },
+          conference: { label: 'Конференция', class: 'lilac-tag' },
+          workshop: { label: 'Мастер-класс', class: 'blue-tag' },
+          meetup: { label: 'Митап', class: 'pink-tag' },
+          competition: { label: 'Конкурс', class: 'lilac-tag' }
+        };
+        if (categories[event.category]) {
+          tagsEl.innerHTML = `<span class="tag ${categories[event.category].class}">${categories[event.category].label}</span>`;
+        }
+
+        // Cover
+        const coverEl = document.getElementById('eventCover');
+        coverEl.src = event.coverUrl || 'https://via.placeholder.com/1200x400';
+
+        // Price
+        const priceEl = document.getElementById('eventPrice');
+        if (event.isPaid && event.price) {
+          priceEl.textContent = `${event.price} ₽`;
+        }
+
+        // Organizer
+        document.getElementById('organizerFullName').textContent = event.organizer.fullName;
+        document.getElementById('organizerUniversity').textContent = event.organizer.university;
+        document.getElementById('organizerAvatar').textContent = getInitials(event.organizer.fullName);
+        
+        if (event.organizer.telegram) {
+          document.getElementById('organizerTelegram').classList.remove('hidden');
+          document.getElementById('telegramLink').href = `https://t.me/${event.organizer.telegram.replace('@','')}`;
+          document.getElementById('telegramLink').textContent = event.organizer.telegram;
+        }
+
+        // Register button
+        const registerBtn = document.getElementById('registerBtn');
+        const user = JSON.parse(localStorage.getItem('user'));
+        if (user) {
+          registerBtn.disabled = false;
+          registerBtn.onclick = () => registerForEvent(id);
+        }
+
+      } catch (err) {
+        document.getElementById('eventTitle').textContent = 'Ошибка загрузки';
+      }
+    }
+
+    function checkAuthAndPermissions(eventId) {
+      const user = JSON.parse(localStorage.getItem('user'));
+      if (!user) return;
+      
+      fetch(`/api/events/${eventId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      .then(res => res.json())
+      .then(event => {
+        if (event.organizerId === user.id) {
+          document.getElementById('organizerPanel').classList.remove('hidden');
+          refreshParticipants(eventId);
+        }
+      });
+    }
+
+    async function refreshParticipants(eventId) {
+      try {
+        const response = await fetch(`/api/events/${eventId}/participants`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!response.ok) return;
+        const participants = await response.json();
+        document.getElementById('participantsCount').textContent = participants.length;
+        document.getElementById('participantsList').innerHTML = participants.map(p => `
+          <tr>
+            <td>${p.fullName}</td>
+            <td>${p.university}</td>
+            <td>${p.telegram || '—'}</td>
+          </tr>
+        `).join('');
+      } catch (err) { console.error(err); }
+    }
+
+    async function registerForEvent(eventId) {
+      const token = localStorage.getItem('token');
+      if (!token) { window.location.href = 'login.html'; return; }
+      
+      try {
+        const response = await fetch(`/api/events/${eventId}/register`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const result = await response.json();
+        const statusEl = document.getElementById('registerStatus');
+        
+        if (response.ok) {
+          statusEl.textContent = '✅ Вы зарегистрированы!';
+          statusEl.style.color = 'var(--green-color)';
+          document.getElementById('registerBtn').textContent = '✓ Зарегистрированы';
+          document.getElementById('registerBtn').className = 'btn btn-success';
+          document.getElementById('registerBtn').disabled = true;
+          if (!document.getElementById('organizerPanel').classList.contains('hidden')) {
+            refreshParticipants(eventId);
+          }
+        } else {
+          statusEl.textContent = result.message || 'Ошибка';
+          statusEl.style.color = 'var(--red-color)';
+        }
+      } catch (err) {
+        document.getElementById('registerStatus').textContent = 'Ошибка соединения';
+        document.getElementById('registerStatus').style.color = 'var(--red-color)';
+      }
+    }
+
+    function formatDate(date) {
+      return new Date(date).toLocaleString('ru-RU', { 
+        day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' 
+      });
+    }
+    function formatDateLong(date) {
+      return new Date(date).toLocaleString('ru-RU', { 
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+    function truncate(str, len) {
+      return str.length > len ? str.slice(0, len) + '…' : str;
+    }
+    function getInitials(name) {
+      return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    }
+  </script>
+</body>
+</html>

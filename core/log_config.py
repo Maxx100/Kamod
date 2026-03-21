@@ -13,13 +13,15 @@ def setup_logging():
     os.makedirs(log_dir, exist_ok=True)
 
     logger = logging.getLogger()
-    logger.setLevel({
+    level_map = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
         "WARNING": logging.WARNING,
         "ERROR": logging.ERROR,
         "CRITICAL": logging.CRITICAL
-    }[LOG_LEVEL])
+    }
+    normalized_level = (LOG_LEVEL or "INFO").upper()
+    logger.setLevel(level_map.get(normalized_level, logging.INFO))
 
     handler = TimedRotatingFileHandler(
         filename=os.path.join(log_dir, "app.log"),

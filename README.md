@@ -1,2 +1,2 @@
 # Kamod
-Kamod
+MegaKamod

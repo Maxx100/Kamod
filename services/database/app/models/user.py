@@ -14,6 +14,8 @@ from app.models.mixins import SoftDeleteMixin, TimestampMixin
 if TYPE_CHECKING:
     from app.models.event import Event
     from app.models.event_registration import EventRegistration
+    from app.models.telegram_notification_job import TelegramNotificationJob
+    from app.models.user_telegram_settings import UserTelegramSettings
 
 
 class User(Base, TimestampMixin, SoftDeleteMixin):
@@ -63,4 +65,14 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     registrations: Mapped[list["EventRegistration"]] = relationship(
         back_populates="user",
         lazy="selectin",
+    )
+    telegram_settings: Mapped["UserTelegramSettings | None"] = relationship(
+        back_populates="user",
+        lazy="selectin",
+        uselist=False,
+    )
+    telegram_jobs: Mapped[list["TelegramNotificationJob"]] = relationship(
+        back_populates="user",
+        lazy="selectin",
+        passive_deletes=True,
     )

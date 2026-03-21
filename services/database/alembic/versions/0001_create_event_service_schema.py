@@ -42,11 +42,6 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
     op.execute("CREATE EXTENSION IF NOT EXISTS citext")
 
-    bind = op.get_bind()
-    event_format_enum.create(bind, checkfirst=True)
-    event_status_enum.create(bind, checkfirst=True)
-    registration_status_enum.create(bind, checkfirst=True)
-
     op.execute(
         """
         CREATE OR REPLACE FUNCTION set_updated_at()

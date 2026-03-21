@@ -21,6 +21,7 @@ from app.services.mappers import (
     to_registered_event_list_item,
     to_registration_response,
 )
+from app.services.telegram_service import TelegramService
 
 
 class RegistrationService:
@@ -29,6 +30,7 @@ class RegistrationService:
         self.events = EventRepository(session)
         self.registrations = RegistrationRepository(session)
         self.users = UserRepository(session)
+        self.telegram = TelegramService(session)
 
     def register_for_event(
         self,
@@ -72,6 +74,7 @@ class RegistrationService:
                 registration.registered_at = now
                 registration.cancelled_at = None
 
+            self.telegram.sync_jobs_for_registration(event, registration)
             self.session.flush()
 
         return to_registration_response(registration), created
@@ -90,6 +93,7 @@ class RegistrationService:
 
             registration.status = RegistrationStatus.CANCELLED
             registration.cancelled_at = datetime.now(timezone.utc)
+            self.telegram.sync_jobs_for_registration(event, registration)
 
     def list_participants(
         self,

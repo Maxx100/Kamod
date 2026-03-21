@@ -24,6 +24,7 @@ class EventCreateRequest(APIModel):
     price_minor: int = Field(default=0, ge=0)
     contacts: NonEmptyStr
     recurrence_rule: NonEmptyStr | None = None
+    attendance_ask_enabled: bool = False
     max_participants: int | None = Field(default=None, gt=0)
     duration_minutes: int = Field(gt=0)
 
@@ -49,6 +50,7 @@ class EventUpdateRequest(APIModel):
     price_minor: int | None = Field(default=None, ge=0)
     contacts: NonEmptyStr | None = None
     recurrence_rule: NonEmptyStr | None = None
+    attendance_ask_enabled: bool | None = None
     max_participants: int | None = Field(default=None, gt=0)
     duration_minutes: int | None = Field(default=None, gt=0)
 
@@ -122,6 +124,7 @@ class EventResponse(TimestampedResponse):
     duration_minutes: int
     max_participants: int | None = None
     recurrence_rule: str | None = None
+    attendance_ask_enabled: bool
     cancelled_at: AwareDatetime | None = None
     completed_at: AwareDatetime | None = None
     deleted_at: AwareDatetime | None = None

@@ -4,7 +4,7 @@ from datetime import datetime
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,7 @@ from app.models.mixins import SoftDeleteMixin, TimestampMixin
 
 
 if TYPE_CHECKING:
+    from app.models.telegram_notification_job import TelegramNotificationJob
     from app.models.event_registration import EventRegistration
     from app.models.tag import Tag
     from app.models.user import User
@@ -31,6 +32,10 @@ class Event(Base, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(
             "max_participants IS NULL OR max_participants > 0",
             name="chk_events_max_participants_positive",
+        ),
+        CheckConstraint(
+            "attendance_ask_enabled IN (TRUE, FALSE)",
+            name="chk_events_attendance_ask_enabled_boolean",
         ),
         CheckConstraint(
             "registration_start_at <= registration_end_at",
@@ -116,6 +121,12 @@ class Event(Base, TimestampMixin, SoftDeleteMixin):
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recurrence_rule: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attendance_ask_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("FALSE"),
+    )
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -129,6 +140,11 @@ class Event(Base, TimestampMixin, SoftDeleteMixin):
         lazy="selectin",
     )
     registrations: Mapped[list["EventRegistration"]] = relationship(
+        back_populates="event",
+        lazy="selectin",
+        passive_deletes=True,
+    )
+    telegram_jobs: Mapped[list["TelegramNotificationJob"]] = relationship(
         back_populates="event",
         lazy="selectin",
         passive_deletes=True,

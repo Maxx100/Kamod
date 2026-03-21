@@ -9,7 +9,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - meganetwork
@@ -68,6 +68,3 @@ services:
 networks:
   meganetwork:
     driver: bridge
-
-volumes:
-  postgres_data:

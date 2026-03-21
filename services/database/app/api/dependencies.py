@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import UnauthorizedError
 from app.db import get_db
-from app.services import EventService, RegistrationService, UserService
+from app.services import EventService, RegistrationService, TelegramService, UserService
 
 
 DatabaseSession = Annotated[Session, Depends(get_db)]
@@ -39,6 +39,11 @@ def get_registration_service(session: DatabaseSession) -> RegistrationService:
     return RegistrationService(session)
 
 
+def get_telegram_service(session: DatabaseSession) -> TelegramService:
+    return TelegramService(session)
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
 RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
+TelegramServiceDep = Annotated[TelegramService, Depends(get_telegram_service)]

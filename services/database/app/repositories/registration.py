@@ -80,6 +80,17 @@ class RegistrationRepository:
         total = self.session.scalar(count_stmt) or 0
         return registrations, total
 
+    def list_active_for_event(self, event_id: UUID) -> list[EventRegistration]:
+        stmt = (
+            select(EventRegistration)
+            .where(
+                EventRegistration.event_id == event_id,
+                EventRegistration.status == RegistrationStatus.REGISTERED,
+            )
+            .order_by(EventRegistration.registered_at.asc(), EventRegistration.id.asc())
+        )
+        return list(self.session.scalars(stmt).all())
+
     def list_user_registrations(
         self,
         user_id: UUID,

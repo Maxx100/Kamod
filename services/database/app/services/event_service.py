@@ -18,6 +18,7 @@ from app.schemas.event import (
     EventUpdateRequest,
 )
 from app.services.mappers import to_event_list_item, to_event_response
+from app.services.telegram_service import TelegramService
 
 
 class EventService:
@@ -27,6 +28,7 @@ class EventService:
         self.users = UserRepository(session)
         self.tags = TagRepository(session)
         self.registrations = RegistrationRepository(session)
+        self.telegram = TelegramService(session)
 
     def create_event(self, current_user_id: UUID, payload: EventCreateRequest) -> EventResponse:
         with self.session.begin():
@@ -50,6 +52,7 @@ class EventService:
                 duration_minutes=payload.duration_minutes,
                 max_participants=payload.max_participants,
                 recurrence_rule=payload.recurrence_rule,
+                attendance_ask_enabled=payload.attendance_ask_enabled,
             )
             event.tags = tags
             self._validate_event_state(event)
@@ -94,6 +97,8 @@ class EventService:
                 event.contacts = payload.contacts
             if "recurrence_rule" in payload.model_fields_set:
                 event.recurrence_rule = payload.recurrence_rule
+            if "attendance_ask_enabled" in payload.model_fields_set:
+                event.attendance_ask_enabled = bool(payload.attendance_ask_enabled)
             if "max_participants" in payload.model_fields_set:
                 event.max_participants = payload.max_participants
             if "duration_minutes" in payload.model_fields_set:
@@ -110,6 +115,8 @@ class EventService:
             ):
                 raise ConflictError("max_participants cannot be lower than registered participants")
 
+            self.telegram.sync_jobs_for_event(event)
+
         return self.get_event(event_id)
 
     def cancel_event(self, event_id: UUID, current_user_id: UUID) -> EventResponse:
@@ -125,6 +132,7 @@ class EventService:
             event.status = EventStatus.CANCELLED
             event.cancelled_at = datetime.now(timezone.utc)
             event.completed_at = None
+            self.telegram.sync_jobs_for_event(event)
 
         return self.get_event(event_id)
 
@@ -141,6 +149,7 @@ class EventService:
             event.status = EventStatus.COMPLETED
             event.completed_at = datetime.now(timezone.utc)
             event.cancelled_at = None
+            self.telegram.sync_jobs_for_event(event)
 
         return self.get_event(event_id)
 

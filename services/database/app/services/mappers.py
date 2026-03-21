@@ -11,6 +11,7 @@ from app.schemas.event import (
     RegisteredEventListItemResponse,
     RegistrationResponse,
 )
+from app.schemas.tg import TelegramDueJobResponse
 from app.schemas.tag import TagSummary
 from app.schemas.user import UserResponse, UserSummary
 
@@ -67,6 +68,7 @@ def to_event_response(event: Event, registered_count: int = 0) -> EventResponse:
         duration_minutes=event.duration_minutes,
         max_participants=event.max_participants,
         recurrence_rule=event.recurrence_rule,
+        attendance_ask_enabled=event.attendance_ask_enabled,
         cancelled_at=event.cancelled_at,
         completed_at=event.completed_at,
         deleted_at=event.deleted_at,
@@ -112,4 +114,18 @@ def to_registered_event_list_item(
         registration_status=registration.status,
         registered_at=registration.registered_at,
         cancelled_at=registration.cancelled_at,
+    )
+
+
+def to_tg_due_job_response(job) -> TelegramDueJobResponse:
+    return TelegramDueJobResponse(
+        job_id=job.id,
+        event_id=job.event_id,
+        user_id=job.user_id,
+        chat_id=job.telegram_chat_id,
+        kind=job.kind,
+        scheduled_at=job.scheduled_at,
+        title=job.event.title,
+        starts_at=job.event.event_start_at,
+        request_id=job.request_id,
     )

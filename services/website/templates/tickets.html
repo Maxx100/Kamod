@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1 class="page-title">Мои билеты</h1>
+<h1 class="page-title">Билеты</h1>
 <p class="page-subtitle">Ваши регистрации на мероприятия</p>
 <div class="filters" style="margin-bottom: 20px;">
   <button class="btn btn-outline tab active" data-filter="all">Все</button>
@@ -88,12 +88,20 @@ async function loadTickets(filter = 'all') {
 }
 
 async function cancelRegistration(registrationId, eventId) {
+  const confirmed = window.confirm('Отменить регистрацию на это мероприятие?');
+  if (!confirmed) {
+    return;
+  }
+
   const token = localStorage.getItem('token');
   const response = await fetch(`/api/events/${eventId}/registration/${registrationId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
   if (response.ok) {
     const active = document.querySelector('.tab.active')?.dataset.filter || 'all';
     loadTickets(active);
+    return;
   }
+
+  window.alert('Не удалось отменить регистрацию');
 }
 </script>
 {% endblock %}

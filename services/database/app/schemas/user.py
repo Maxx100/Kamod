@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import AwareDatetime, EmailStr, field_validator, model_validator
+from pydantic import AwareDatetime, EmailStr, Field, field_validator, model_validator
 
 from app.schemas.common import APIModel, NonEmptyStr, TelegramStr, TimestampedResponse
 
@@ -43,6 +43,7 @@ class UserSummary(APIModel):
     university: str | None = None
     faculty: str | None = None
     telegram: str | None = None
+    has_photo: bool = False
 
 
 class UserUpdateRequest(APIModel):
@@ -65,5 +66,12 @@ class UserResponse(TimestampedResponse):
     university: str | None = None
     faculty: str | None = None
     telegram: str | None = None
+    has_photo: bool = False
     is_active: bool
     deleted_at: AwareDatetime | None = None
+
+
+class UserPhotoMetaResponse(APIModel):
+    has_photo: bool
+    content_type: str | None = None
+    size_bytes: int = Field(ge=0)

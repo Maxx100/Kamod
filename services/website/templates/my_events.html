@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1 class="page-title">Мои мероприятия</h1>
+    <p class="page-subtitle">Здесь можно открыть, создать и отредактировать события, которые вы создали</p>
+  </div>
+  <a href="/create-event" class="btn btn-primary">Создать мероприятие</a>
+</div>
+<div class="events-grid" id="myEventsGrid"></div>
+<div id="myEventsEmptyState" class="card hidden" style="text-align:center;">У вас пока нет созданных мероприятий</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getMyEventStatusLabel(event) {
+  if (event.status === 'cancelled') return 'Отменено';
+  if (event.status === 'completed') return 'Завершено';
+  return 'Опубликовано';
+}
+
+function getMyEventStatusClass(event) {
+  if (event.status === 'cancelled') return 'orange-tag';
+  if (event.status === 'completed') return 'lilac-tag';
+  return 'blue-tag';
+}
+
+function getMyEventDefaultCover(eventId) {
+  const covers = ['/img/1.jpeg', '/img/2.jpeg', '/img/3.jpeg', '/img/4.jpeg', '/img/5.jpeg', '/img/6.jpeg'];
+  let hash = 0;
+  const raw = String(eventId || 'default');
+  for (let i = 0; i < raw.length; i += 1) hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+  return covers[Math.abs(hash) % covers.length];
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const user = JSON.parse(localStorage.getItem('user'));
+  const token = localStorage.getItem('token');
+  if (!user || !token) {
+    window.location.href = '/login';
+    return;
+  }
+
+  const grid = document.getElementById('myEventsGrid');
+  const emptyState = document.getElementById('myEventsEmptyState');
+
+  const response = await fetch(`/api/users/${user.id}/created-events`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  if (!response.ok) {
+    grid.innerHTML = '<div class="card">Не удалось загрузить ваши мероприятия</div>';
+    return;
+  }
+
+  const events = await response.json();
+  if (!Array.isArray(events) || !events.length) {
+    grid.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    return;
+  }
+
+  emptyState.classList.add('hidden');
+  events.sort((a, b) => new Date(b.eventDate) - new Date(a.eventDate));
+
+  grid.innerHTML = events.map((event) => `
+    <article class="event-card">
+      <a href="/event?id=${event.id}">
+        <div class="event-image-wrapper">
+          <img class="event-image" src="${event.coverUrl || getMyEventDefaultCover(event.id)}" alt="${event.title}" onerror="this.onerror=null;this.src='${getMyEventDefaultCover(event.id)}'">
+          <div class="event-tags">
+            <span class="event-tag ${getMyEventStatusClass(event)}">${getMyEventStatusLabel(event)}</span>
+          </div>
+        </div>
+        <div class="event-name">${event.title}</div>
+        <div class="event-info"><span>${new Date(event.eventDate).toLocaleString('ru-RU')}</span></div>
+      </a>
+      <div style="padding:0 16px 16px; display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn btn-outline" href="/event?id=${event.id}">Открыть</a>
+        <a class="btn btn-primary" href="/edit-event?id=${event.id}">Редактировать</a>
+      </div>
+    </article>
+  `).join('');
+});
+</script>
+{% endblock %}

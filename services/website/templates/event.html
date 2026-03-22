@@ -5,6 +5,8 @@
 .event-header { position: relative; border-radius: 24px; overflow: hidden; height: 360px; margin-top: 20px; background: #111; }
 .event-header img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.8); }
 .event-header-content { position: absolute; left: 24px; right: 24px; bottom: 24px; color: white; }
+.event-header-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.event-header-content h1 { margin: 0 0 10px; }
 .event-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px; }
 .event-meta { display: grid; gap: 10px; margin-top: 16px; color: var(--black-600); }
 @media (max-width: 900px) { .event-layout { grid-template-columns: 1fr; } }
@@ -47,12 +49,14 @@
     <p id="registerStatus" style="margin-top:10px;font-size:14px;"></p>
 
     <div class="hidden" id="organizerPanel" style="margin-top:20px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+        <a id="editEventBtn" class="btn btn-outline" href="#">Редактировать</a>
+      </div>
       <h3 style="font-size:18px;">Участники (<span id="participantsCount">0</span>)</h3>
       <table style="width:100%;margin-top:10px;border-collapse:collapse;">
         <thead><tr><th align="left">ФИО</th><th align="left">Telegram</th></tr></thead>
         <tbody id="participantsList"></tbody>
       </table>
-      <button class="btn btn-outline" style="margin-top:10px;width:100%;" onclick="refreshParticipants()">Обновить</button>
     </div>
   </div>
 </section>
@@ -63,6 +67,7 @@
 const urlParams = new URLSearchParams(window.location.search);
 const eventId = urlParams.get('id');
 let defaultCovers = null;
+let currentEvent = null;
 
 async function fetchDefaultCovers() {
   if (defaultCovers !== null) return defaultCovers;
@@ -99,6 +104,37 @@ async function setCoverWithFallback(sourceUrl, seed) {
   coverEl.src = primary;
 }
 
+function getEventTagLabel(tagKey) {
+  const labels = {
+    hackathon: 'Хакатон',
+    conference: 'Конференция',
+    workshop: 'Мастер-класс',
+    meetup: 'Митап',
+    competition: 'Конкурс',
+    other: 'Другое',
+    online: 'Онлайн'
+  };
+  return labels[tagKey] || 'Другое';
+}
+
+function getEventTagClass(tagKey) {
+  const classes = {
+    hackathon: 'pink-tag',
+    conference: 'lilac-tag',
+    workshop: 'blue-tag',
+    meetup: 'pink-tag',
+    competition: 'lilac-tag',
+    other: 'orange-tag',
+    online: 'blue-tag'
+  };
+  return classes[tagKey] || 'orange-tag';
+}
+
+function renderEventTags(event) {
+  const tags = Array.isArray(event.tags) && event.tags.length ? event.tags : [event.category || 'other'];
+  return tags.map((tag) => `<span class="event-tag ${getEventTagClass(tag)}">${getEventTagLabel(tag)}</span>`).join('');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   if (!eventId) { window.location.href = '/main'; return; }
   await loadEvent(eventId);
@@ -109,6 +145,7 @@ async function loadEvent(id) {
   const response = await fetch(`/api/events/${id}`);
   if (!response.ok) { document.getElementById('eventTitle').textContent = 'Ошибка загрузки'; return; }
   const event = await response.json();
+  currentEvent = event;
 
   document.getElementById('eventTitle').textContent = event.title;
   document.getElementById('eventDateTime').textContent = new Date(event.eventDate).toLocaleString('ru-RU');
@@ -117,7 +154,8 @@ async function loadEvent(id) {
   document.getElementById('eventDescription').textContent = event.description || '';
   document.getElementById('eventPrice').textContent = event.isPaid && event.price ? `${event.price} ₽` : 'Бесплатно';
 
-  document.getElementById('eventTags').innerHTML = `<span class='event-tag blue-tag'>${event.category}</span>`;
+  document.getElementById('eventTags').className = 'event-header-tags';
+  document.getElementById('eventTags').innerHTML = renderEventTags(event);
   await setCoverWithFallback(event.coverUrl, event.id);
 
   document.getElementById('organizerFullName').textContent = event.organizer.fullName;
@@ -145,6 +183,7 @@ function checkAuthAndPermissions(eventId) {
     .then((event) => {
       if (event.organizerId === user.id) {
         document.getElementById('organizerPanel').classList.remove('hidden');
+        document.getElementById('editEventBtn').href = `/edit-event?id=${eventId}`;
         refreshParticipants(eventId);
       }
     });
@@ -164,15 +203,36 @@ async function updateRegistrationState(eventId, userId) {
   const response = await fetch(`/api/users/${userId}/registrations`, { headers: { 'Authorization': `Bearer ${token}` } });
   if (!response.ok) return;
   const registrations = await response.json();
-  const isRegistered = Array.isArray(registrations) && registrations.some((row) => String(row?.event?.id) === String(eventId));
-  if (!isRegistered) return;
-
   const registerBtn = document.getElementById('registerBtn');
   const statusEl = document.getElementById('registerStatus');
-  registerBtn.textContent = '✓ Зарегистрированы';
-  registerBtn.className = 'btn btn-success';
-  registerBtn.disabled = true;
-  statusEl.textContent = 'Вы уже зарегистрированы на это мероприятие';
+  const registration = Array.isArray(registrations)
+    ? registrations.find((row) => String(row?.event?.id) === String(eventId))
+    : null;
+
+  if (!registration) {
+    registerBtn.textContent = 'Зарегистрироваться';
+    registerBtn.className = 'btn btn-primary';
+    registerBtn.disabled = false;
+    registerBtn.onclick = () => registerForEvent(eventId);
+    statusEl.textContent = '';
+    return;
+  }
+
+  const eventIsPast = currentEvent ? new Date(currentEvent.eventDate) <= new Date() : false;
+  if (eventIsPast) {
+    registerBtn.textContent = '✓ Зарегистрированы';
+    registerBtn.className = 'btn btn-success';
+    registerBtn.disabled = true;
+    statusEl.textContent = 'Регистрация уже подтверждена';
+    statusEl.style.color = 'var(--green-color)';
+    return;
+  }
+
+  registerBtn.textContent = 'Отменить регистрацию';
+  registerBtn.className = 'btn btn-outline';
+  registerBtn.disabled = false;
+  registerBtn.onclick = () => cancelEventRegistration(eventId);
+  statusEl.textContent = 'Вы зарегистрированы на это мероприятие';
   statusEl.style.color = 'var(--green-color)';
 }
 
@@ -188,13 +248,49 @@ async function registerForEvent(eventId) {
   if (response.ok) {
     statusEl.textContent = '✅ Вы зарегистрированы!';
     statusEl.style.color = 'var(--green-color)';
-    const btn = document.getElementById('registerBtn');
-    btn.textContent = '✓ Зарегистрированы';
-    btn.className = 'btn btn-success';
-    btn.disabled = true;
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user?.id) {
+      await updateRegistrationState(eventId, user.id);
+    }
     return;
   }
   statusEl.textContent = result.message || 'Ошибка';
+  statusEl.style.color = 'var(--red-color)';
+}
+
+async function cancelEventRegistration(eventId) {
+  const token = localStorage.getItem('token');
+  const user = JSON.parse(localStorage.getItem('user'));
+  if (!token || !user?.id) {
+    window.location.href = '/login';
+    return;
+  }
+
+  const confirmed = window.confirm('Отменить регистрацию на это мероприятие?');
+  if (!confirmed) {
+    return;
+  }
+
+  const response = await fetch(`/api/events/${eventId}/registration/${eventId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  const statusEl = document.getElementById('registerStatus');
+  if (response.ok) {
+    statusEl.textContent = 'Регистрация отменена';
+    statusEl.style.color = 'var(--orange-tag-color)';
+    await updateRegistrationState(eventId, user.id);
+    return;
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  statusEl.textContent = payload?.message || 'Не удалось отменить регистрацию';
   statusEl.style.color = 'var(--red-color)';
 }
 </script>

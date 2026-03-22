@@ -11,21 +11,37 @@
 </section>
 
 <h2 class="page-title" style="margin-top:24px;">Популярные сейчас</h2>
-<div class="events-grid" id="popularEventsGrid"></div>
+<div class="events-grid" id="popularEventsGrid">
+  <div class="card">Загрузка популярных событий...</div>
+</div>
 
 <h2 class="page-title">Все мероприятия</h2>
-<div class="filters">
-  <input id="dateFilter" type="date">
-  <select id="categoryFilter">
-    <option value="">Все категории</option>
-    <option value="hackathon">Хакатон</option>
-    <option value="conference">Конференция</option>
-    <option value="workshop">Мастер-класс</option>
-    <option value="meetup">Митап</option>
-    <option value="competition">Конкурс</option>
-    <option value="other">Другое</option>
-  </select>
-  <button class="btn btn-outline" onclick="resetFilters()">Сбросить</button>
+<div class="filters-card">
+  <div class="filters filters-grid">
+    <div class="filter-field">
+      <label for="dateFromFilter">С даты</label>
+      <input id="dateFromFilter" type="date">
+    </div>
+    <div class="filter-field">
+      <label for="dateToFilter">По дату</label>
+      <input id="dateToFilter" type="date">
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-outline" type="button" onclick="resetFilters()">Сбросить</button>
+    </div>
+  </div>
+  <div class="filter-tags-block">
+    <div class="filter-tags-title">Теги</div>
+    <div class="filter-tags" id="tagFilters">
+      <button type="button" class="filter-chip" data-tag="hackathon">Хакатон</button>
+      <button type="button" class="filter-chip" data-tag="conference">Конференция</button>
+      <button type="button" class="filter-chip" data-tag="workshop">Мастер-класс</button>
+      <button type="button" class="filter-chip" data-tag="meetup">Митап</button>
+      <button type="button" class="filter-chip" data-tag="competition">Конкурс</button>
+      <button type="button" class="filter-chip" data-tag="online">Онлайн</button>
+      <button type="button" class="filter-chip" data-tag="other">Другое</button>
+    </div>
+  </div>
 </div>
 
 <div class="events-grid" id="eventsGrid"></div>
@@ -35,5 +51,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/js/events.js"></script>
+<script src="/js/events.js?v=20260322-2"></script>
 {% endblock %}

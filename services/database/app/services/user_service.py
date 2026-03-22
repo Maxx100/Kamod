@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, UnprocessableError
 from app.core.security import hash_password, verify_password
 from app.models import User
 from app.repositories import UserRepository
@@ -12,6 +14,8 @@ from app.services.mappers import to_user_response
 
 
 class UserService:
+    MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
+
     def __init__(self, session: Session) -> None:
         self.session = session
         self.users = UserRepository(session)
@@ -83,3 +87,47 @@ class UserService:
             self.session.flush()
 
         return to_user_response(user)
+
+    def upload_user_photo(
+        self,
+        user_id: UUID,
+        current_user_id: UUID,
+        *,
+        content_type: str,
+        data: bytes,
+    ) -> UserResponse:
+        if user_id != current_user_id:
+            raise ForbiddenError("You can only update your own profile")
+        if not data:
+            raise UnprocessableError("Photo file is empty")
+        if len(data) > self.MAX_PHOTO_SIZE_BYTES:
+            raise UnprocessableError("Photo size must be <= 5MB")
+        if not content_type.startswith("image/"):
+            raise UnprocessableError("Only image files are allowed")
+
+        with self.session.begin():
+            user = self.users.get_by_id_for_update(user_id)
+            if user is None:
+                raise NotFoundError("User not found")
+
+            user.photo_data = data
+            user.photo_content_type = content_type
+            user.photo_size_bytes = len(data)
+            self.session.flush()
+
+        return self.get_user(user_id, current_user_id)
+
+    def get_user_photo(
+        self,
+        user_id: UUID,
+        current_user_id: UUID,
+    ) -> tuple[str, bytes]:
+        if user_id != current_user_id:
+            raise ForbiddenError("You can only access your own profile")
+
+        user = self.users.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User not found")
+        if user.photo_data is None or user.photo_content_type is None:
+            raise NotFoundError("User photo not found")
+        return user.photo_content_type, bytes(user.photo_data)

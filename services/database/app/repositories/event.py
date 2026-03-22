@@ -101,11 +101,20 @@ class EventRepository:
         return events, total
 
     def _apply_filters(self, stmt: Select, params: EventListQueryParams) -> Select:
-        if params.tag is not None:
-            stmt = stmt.join(Event.tags).where(
-                Tag.slug == params.tag,
-                Tag.is_active.is_(True),
+        requested_tags = params.tags
+        if requested_tags:
+            matching_event_ids = (
+                select(Event.id)
+                .join(Event.tags)
+                .where(
+                    Tag.slug.in_(requested_tags),
+                    Tag.is_active.is_(True),
+                    Event.deleted_at.is_(None),
+                )
+                .group_by(Event.id)
+                .having(func.count(distinct(Tag.id)) == len(requested_tags))
             )
+            stmt = stmt.where(Event.id.in_(matching_event_ids))
 
         if params.status is None:
             stmt = stmt.where(Event.status == EventStatus.PUBLISHED)

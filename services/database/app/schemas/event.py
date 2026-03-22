@@ -79,6 +79,7 @@ class EventListQueryParams(APIModel):
     status: EventStatus | None = None
     created_by_user_id: UUID | None = None
     tag: SlugStr | None = None
+    tags: list[SlugStr] | None = None
     format: EventFormat | None = None
     is_free: bool | None = None
     starts_from: AwareDatetime | None = None
@@ -87,6 +88,12 @@ class EventListQueryParams(APIModel):
 
     @model_validator(mode="after")
     def validate_interval(self) -> "EventListQueryParams":
+        requested_tags: list[str] = []
+        if self.tag is not None:
+            requested_tags.append(self.tag)
+        requested_tags.extend(self.tags or [])
+        self.tags = _deduplicate_slugs(requested_tags)
+
         if self.starts_from and self.starts_to and self.starts_from > self.starts_to:
             raise ValueError("starts_from must be <= starts_to")
         return self

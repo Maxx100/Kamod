@@ -1,37 +1,106 @@
+let currentAvatarObjectUrl = null;
+
+function getStoredUser() {
+  try {
+    return JSON.parse(localStorage.getItem('user'));
+  } catch {
+    return null;
+  }
+}
+
+function getUserInitials(fullName) {
+  if (!fullName) return '?';
+  return fullName
+    .split(' ')
+    .map((part) => part[0]?.toUpperCase())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('');
+}
+
+function clearAvatarObjectUrl() {
+  if (currentAvatarObjectUrl) {
+    URL.revokeObjectURL(currentAvatarObjectUrl);
+    currentAvatarObjectUrl = null;
+  }
+}
+
+async function applyHeaderAvatar(token) {
+  const user = getStoredUser();
+  const avatarImage = document.querySelector('[data-user-avatar-image]');
+  const avatarFallback = document.querySelector('[data-user-avatar-fallback]');
+
+  if (!user || !token || !avatarImage || !avatarFallback || !user.hasPhoto) {
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/users/me/photo', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      throw new Error('avatar not found');
+    }
+
+    clearAvatarObjectUrl();
+    currentAvatarObjectUrl = URL.createObjectURL(await response.blob());
+    avatarImage.src = currentAvatarObjectUrl;
+    avatarImage.classList.remove('hidden');
+    avatarFallback.classList.add('hidden');
+  } catch {
+    avatarImage.removeAttribute('src');
+    avatarImage.classList.add('hidden');
+    avatarFallback.classList.remove('hidden');
+  }
+}
+
 // Проверка статуса авторизации и обновление UI
-function updateAuthUI() {
-  const user = JSON.parse(localStorage.getItem('user'));
+async function updateAuthUI() {
+  const user = getStoredUser();
+  const token = localStorage.getItem('token');
   const authButtons = document.getElementById('authButtons');
-  const createEventBtn = document.getElementById('createEventBtn');
   const profileNavLink = document.getElementById('profileNavLink');
+  const myEventsNavLink = document.getElementById('myEventsNavLink');
   
   if (!authButtons) return;
   
   if (user) {
-    // Пользователь авторизован
-    const firstName = (user.fullName || 'Пользователь').split(' ')[0];
+    const initials = getUserInitials(user.fullName);
+    const displayName = user.fullName || 'Пользователь';
+
     authButtons.innerHTML = `
-      <span style="font-weight: 500;">👋 ${firstName}</span>
+      <a href="/profile" class="auth-user-chip auth-user-link" aria-label="Перейти в профиль">
+        <div class="user-avatar">
+          <img class="user-avatar-image hidden" data-user-avatar-image alt="Фото профиля">
+          <span class="user-avatar-fallback" data-user-avatar-fallback>${initials}</span>
+        </div>
+        <span class="auth-user-name">${displayName}</span>
+      </a>
       <button class="btn btn-outline" onclick="logout()">Выйти</button>
     `;
     
-    // Показать кнопку создания мероприятия на главной
-    if (createEventBtn) {
-      createEventBtn.classList.remove('hidden');
+    if (myEventsNavLink) {
+      myEventsNavLink.classList.remove('hidden');
     }
+
     if (profileNavLink) {
       profileNavLink.classList.remove('hidden');
     }
+
+    if (user.hasPhoto && token) {
+      await applyHeaderAvatar(token);
+    }
   } else {
-    // Пользователь не авторизован
+    clearAvatarObjectUrl();
     authButtons.innerHTML = `
       <a href="/login" class="btn btn-outline">Войти</a>
       <a href="/register" class="btn btn-primary">Регистрация</a>
     `;
     
-    if (createEventBtn) {
-      createEventBtn.classList.add('hidden');
+    if (myEventsNavLink) {
+      myEventsNavLink.classList.add('hidden');
     }
+
     if (profileNavLink) {
       profileNavLink.classList.add('hidden');
     }
@@ -40,13 +109,11 @@ function updateAuthUI() {
 
 // Выход из системы
 function logout() {
+  clearAvatarObjectUrl();
   localStorage.removeItem('token');
   localStorage.removeItem('user');
   window.location.href = '/main';
 }
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', updateAuthUI);
 
 // Проверка токена при инициализации
 async function validateToken() {
@@ -60,12 +127,25 @@ async function validateToken() {
     
     if (response.ok) {
       return await response.json();
-    } else {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      return null;
     }
+
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    return null;
   } catch {
     return null;
   }
 }
+
+async function initAuthUI() {
+  const freshUser = await validateToken();
+  if (freshUser) {
+    localStorage.setItem('user', JSON.stringify(freshUser));
+  }
+  await updateAuthUI();
+}
+
+window.updateAuthUI = updateAuthUI;
+window.validateToken = validateToken;
+
+document.addEventListener('DOMContentLoaded', initAuthUI);

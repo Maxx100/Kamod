@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1 class="page-title">Создать мероприятие</h1>
-<p class="page-subtitle">Заполните данные и опубликуйте событие</p>
+<h1 class="page-title">Редактирование мероприятия</h1>
+<p class="page-subtitle">Обновите данные события и сохраните изменения</p>
 
 <div class="card" style="max-width:700px; margin: 0 auto 24px;">
-  <form id="createEventForm">
+  <form id="editEventForm">
     <div class="form-group"><label for="title">Название *</label><input id="title" required></div>
     <div class="form-group">
       <label for="category">Категория *</label>
@@ -28,21 +28,27 @@
     <div class="form-group"><label for="eventDate">Дата и время *</label><input id="eventDate" type="datetime-local" required></div>
     <div class="form-group" id="addressGroup"><label for="address">Адрес *</label><input id="address" required></div>
     <div class="form-group"><label for="description">Описание *</label><textarea id="description" required></textarea></div>
-    <div class="form-group"><label for="eventImage">Обложка (до 10 МБ)</label><input type="file" id="eventImage" accept="image/*"></div>
+    <div class="form-group"><label for="eventImage">Новая обложка (до 10 МБ)</label><input type="file" id="eventImage" accept="image/*"></div>
     <div class="form-group">
       <label for="isPaid" class="checkbox-label">Платное мероприятие <input type="checkbox" id="isPaid"></label>
     </div>
     <div class="form-group hidden" id="priceGroup"><label for="price">Цена (₽)</label><input id="price" type="number" min="0"></div>
     <div id="formError" class="error hidden"></div>
     <div id="formSuccess" class="success hidden"></div>
-    <button type="submit" class="btn btn-primary" style="width:100%;">Опубликовать</button>
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+      <a id="backToEventLink" class="btn btn-outline" href="/my-events">Назад</a>
+    </div>
   </form>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function toggleCreateEventFormatFields() {
+const editEventParams = new URLSearchParams(window.location.search);
+const editEventId = editEventParams.get('id');
+
+function toggleEditEventFormatFields() {
   const isOnline = document.getElementById('eventFormat').value === 'online';
   const addressGroup = document.getElementById('addressGroup');
   const addressInput = document.getElementById('address');
@@ -54,21 +60,64 @@ function toggleCreateEventFormatFields() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function toDatetimeLocalInput(value) {
+  const date = new Date(value);
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
   const user = JSON.parse(localStorage.getItem('user'));
-  if (!user) {
+  const token = localStorage.getItem('token');
+  if (!user || !token) {
     window.location.href = '/login';
     return;
   }
-  document.getElementById('eventFormat').addEventListener('change', toggleCreateEventFormatFields);
+  if (!editEventId) {
+    window.location.href = '/my-events';
+    return;
+  }
+
+  document.getElementById('backToEventLink').href = `/event?id=${editEventId}`;
+  document.getElementById('eventFormat').addEventListener('change', toggleEditEventFormatFields);
   document.getElementById('isPaid').addEventListener('change', (e) => {
     document.getElementById('priceGroup').classList.toggle('hidden', !e.target.checked);
   });
-  toggleCreateEventFormatFields();
+
+  const response = await fetch(`/api/events/${editEventId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!response.ok) {
+    window.location.href = '/my-events';
+    return;
+  }
+
+  const event = await response.json();
+  if (event.organizerId !== user.id) {
+    window.location.href = `/event?id=${editEventId}`;
+    return;
+  }
+
+  document.getElementById('title').value = event.title || '';
+  document.getElementById('category').value = event.category || 'other';
+  document.getElementById('eventFormat').value = event.format || 'offline';
+  document.getElementById('eventDate').value = toDatetimeLocalInput(event.eventDate);
+  document.getElementById('address').value = event.address || '';
+  document.getElementById('description').value = event.description || '';
+  document.getElementById('isPaid').checked = Boolean(event.isPaid);
+  document.getElementById('price').value = event.isPaid ? String(event.price || 0) : '';
+  document.getElementById('priceGroup').classList.toggle('hidden', !event.isPaid);
+  toggleEditEventFormatFields();
 });
 
-document.getElementById('createEventForm').addEventListener('submit', async (e) => {
+document.getElementById('editEventForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const token = localStorage.getItem('token');
+  if (!token || !editEventId) {
+    window.location.href = '/login';
+    return;
+  }
+
   const errorEl = document.getElementById('formError');
   const successEl = document.getElementById('formSuccess');
   errorEl.classList.add('hidden');
@@ -94,17 +143,22 @@ document.getElementById('createEventForm').addEventListener('submit', async (e) 
   if (file) formData.append('image', file);
 
   try {
-    const token = localStorage.getItem('token');
-    const response = await fetch('/api/events', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
+    const response = await fetch(`/api/events/${editEventId}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
     const payload = await response.json();
+
     if (!response.ok) {
-      errorEl.textContent = payload.message || 'Ошибка создания';
+      errorEl.textContent = payload.message || 'Не удалось обновить мероприятие';
       errorEl.classList.remove('hidden');
       return;
     }
-    successEl.textContent = 'Мероприятие создано';
+
+    successEl.textContent = 'Изменения сохранены';
     successEl.classList.remove('hidden');
-    setTimeout(() => window.location.href = `/event?id=${payload.id}`, 800);
+    setTimeout(() => window.location.href = `/event?id=${editEventId}`, 800);
   } catch {
     errorEl.textContent = 'Ошибка соединения';
     errorEl.classList.remove('hidden');

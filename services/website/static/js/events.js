@@ -27,14 +27,44 @@ function getTagClassByCategory(category) {
     workshop: 'blue-tag',
     meetup: 'pink-tag',
     competition: 'lilac-tag',
-    other: 'orange-tag'
+    other: 'orange-tag',
+    online: 'blue-tag'
   };
   return classes[category] || 'orange-tag';
 }
 
+function getCategoryName(key) {
+  const categories = {
+    hackathon: 'Хакатон',
+    conference: 'Конференция',
+    workshop: 'Мастер-класс',
+    meetup: 'Митап',
+    competition: 'Конкурс',
+    other: 'Другое',
+    online: 'Онлайн'
+  };
+  return categories[key] || 'Другое';
+}
+
+function getEventTagKeys(event) {
+  if (Array.isArray(event.tags) && event.tags.length) {
+    return event.tags;
+  }
+
+  const tags = [event.category || 'other'];
+  if (event.format === 'online') {
+    tags.push('online');
+  }
+  return tags;
+}
+
+function renderEventTags(event, className = 'event-tag') {
+  return getEventTagKeys(event)
+    .map((tag) => `<span class="${className} ${getTagClassByCategory(tag)}">${getCategoryName(tag)}</span>`)
+    .join('');
+}
+
 function renderEventCard(event) {
-  const tagClass = getTagClassByCategory(event.category);
-  const tagName = getCategoryName(event.category);
   const coverUrl = resolveEventCover(event);
 
   return `
@@ -43,7 +73,7 @@ function renderEventCard(event) {
         <div class="event-image-wrapper">
           <img src="${coverUrl}" alt="${event.title}" class="event-image" onerror="this.onerror=null;this.src='${getDefaultCoverById(event.id)}'">
           <div class="event-tags">
-            <span class="event-tag ${tagClass}">${tagName}</span>
+            ${renderEventTags(event)}
           </div>
         </div>
         <div class="event-name">${event.title}</div>
@@ -59,27 +89,40 @@ function renderEventCard(event) {
   `;
 }
 
-function renderHero(events) {
+function renderHero(event) {
   const heroContainer = document.getElementById('heroEvent');
-  if (!heroContainer || events.length === 0) return;
+  if (!heroContainer) return;
 
-  const event = events[0];
-  const coverUrl = resolveEventCover(event);
-  heroContainer.innerHTML = `
-    <div class="carousel-item">
-      <img src="${coverUrl}" alt="${event.title}" class="carousel-bg" onerror="this.onerror=null;this.src='${getDefaultCoverById(event.id)}'">
-      <div class="carousel-content">
-        <div class="carousel-tags">
-          <span class="tag ${getTagClassByCategory(event.category)}">${getCategoryName(event.category)}</span>
-        </div>
-        <h1 class="carousel-title">${event.title}</h1>
-        <div class="carousel-info">
-          <span>${formatDate(event.eventDate)}</span>
-          <span>•</span>
-          <span>${truncateAddress(event.address, 48)}</span>
+  if (!event) {
+    heroContainer.innerHTML = `
+      <div class="carousel-item">
+        <img src="/img/1.jpeg" alt="Событие" class="carousel-bg">
+        <div class="carousel-content">
+          <h1 class="carousel-title">Пока нет популярных мероприятий</h1>
         </div>
       </div>
-    </div>
+    `;
+    return;
+  }
+
+  const coverUrl = resolveEventCover(event);
+  heroContainer.innerHTML = `
+    <a href="/event?id=${event.id}" class="hero-link" aria-label="Открыть событие ${event.title}">
+      <div class="carousel-item">
+        <img src="${coverUrl}" alt="${event.title}" class="carousel-bg" onerror="this.onerror=null;this.src='${getDefaultCoverById(event.id)}'">
+        <div class="carousel-content">
+          <div class="carousel-tags">
+            ${renderEventTags(event, 'tag')}
+          </div>
+          <h1 class="carousel-title">${event.title}</h1>
+          <div class="carousel-info">
+            <span>${formatDate(event.eventDate)}</span>
+            <span>•</span>
+            <span>${truncateAddress(event.address, 48)}</span>
+          </div>
+        </div>
+      </div>
+    </a>
   `;
 }
 
@@ -88,7 +131,57 @@ function renderPopular(events) {
   if (!popularGrid) return;
 
   const topEvents = events.slice(0, 3);
+  if (!topEvents.length) {
+    popularGrid.innerHTML = '<div class="card">Пока нет популярных мероприятий</div>';
+    return;
+  }
   popularGrid.innerHTML = topEvents.map(renderEventCard).join('');
+}
+
+function getPopularEvents(events) {
+  const now = new Date();
+  const upcomingEvents = events.filter((event) => new Date(event.eventDate) >= now);
+  const source = upcomingEvents.length ? upcomingEvents : events;
+
+  return [...source].sort((left, right) => {
+    const registrationsDiff = (right.registeredCount || 0) - (left.registeredCount || 0);
+    if (registrationsDiff !== 0) {
+      return registrationsDiff;
+    }
+
+    const dateDiff = new Date(left.eventDate) - new Date(right.eventDate);
+    if (dateDiff !== 0) {
+      return dateDiff;
+    }
+
+    return String(left.title || '').localeCompare(String(right.title || ''), 'ru');
+  });
+}
+
+async function loadPopularEvents() {
+  const popularGrid = document.getElementById('popularEventsGrid');
+  if (!popularGrid) return;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch('/api/events', { signal: controller.signal });
+    const events = await response.json();
+    if (!Array.isArray(events)) {
+      throw new Error('Некорректный формат ответа');
+    }
+
+    const popularEvents = getPopularEvents(events);
+    renderHero(popularEvents[0] || null);
+    renderPopular(popularEvents);
+  } catch (err) {
+    console.error('Ошибка загрузки популярных мероприятий:', err);
+    renderHero(null);
+    popularGrid.innerHTML = '<p style="color: var(--red-color);">Не удалось загрузить популярные события</p>';
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function renderNextPage() {
@@ -105,19 +198,39 @@ function renderNextPage() {
   }
 }
 
-// Загрузка и отображение мероприятий
+function getSelectedTags() {
+  return Array.from(document.querySelectorAll('.filter-chip.active'))
+    .map((button) => button.dataset.tag)
+    .filter(Boolean);
+}
+
+function getCurrentFilters() {
+  return {
+    dateFrom: document.getElementById('dateFromFilter')?.value || '',
+    dateTo: document.getElementById('dateToFilter')?.value || '',
+    tags: getSelectedTags()
+  };
+}
+
+function hasActiveFilters(filters = {}) {
+  return Boolean(filters.dateFrom || filters.dateTo || (Array.isArray(filters.tags) && filters.tags.length));
+}
+
 async function loadEvents(filters = {}) {
   const grid = document.getElementById('eventsGrid');
   if (!grid) return;
 
   grid.innerHTML = '';
   renderedCount = 0;
-  
+
   try {
     const params = new URLSearchParams();
-    if (filters.date) params.append('date', filters.date);
-    if (filters.category) params.append('category', filters.category);
-    
+    if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+    if (filters.dateTo) params.append('dateTo', filters.dateTo);
+    if (Array.isArray(filters.tags)) {
+      filters.tags.forEach((tag) => params.append('tags', tag));
+    }
+
     const response = await fetch(`/api/events?${params.toString()}`);
     const events = await response.json();
 
@@ -127,9 +240,11 @@ async function loadEvents(filters = {}) {
 
     allLoadedEvents = [...events].sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
 
-    renderHero(allLoadedEvents);
-    renderPopular(allLoadedEvents);
-
+    if (!hasActiveFilters(filters)) {
+      const popularEvents = getPopularEvents(allLoadedEvents);
+      renderHero(popularEvents[0] || null);
+      renderPopular(popularEvents);
+    }
     if (allLoadedEvents.length === 0) {
       grid.innerHTML = '<p style="color: var(--black-600);">Пока нет опубликованных событий</p>';
       const loadMoreBtn = document.getElementById('loadMoreBtn');
@@ -144,36 +259,24 @@ async function loadEvents(filters = {}) {
   }
 }
 
-// Применение фильтров
 function applyFilters() {
-  const date = document.getElementById('dateFilter')?.value;
-  const category = document.getElementById('categoryFilter')?.value;
-  
-  loadEvents({ date, category });
+  loadEvents(getCurrentFilters());
 }
 
-// Сброс фильтров
 function resetFilters() {
-  if (document.getElementById('dateFilter')) {
-    document.getElementById('dateFilter').value = '';
-  }
-  if (document.getElementById('categoryFilter')) {
-    document.getElementById('categoryFilter').value = '';
-  }
-  loadEvents({});
-}
+  const dateFromFilter = document.getElementById('dateFromFilter');
+  const dateToFilter = document.getElementById('dateToFilter');
 
-// Вспомогательные функции
-function getCategoryName(key) {
-  const categories = {
-    hackathon: 'Хакатон',
-    conference: 'Конференция',
-    workshop: 'Мастер-класс',
-    meetup: 'Митап',
-    competition: 'Конкурс',
-    other: 'Другое'
-  };
-  return categories[key] || key;
+  if (dateFromFilter) dateFromFilter.value = '';
+  if (dateToFilter) dateToFilter.value = '';
+
+  document.querySelectorAll('.filter-chip.active').forEach((button) => {
+    button.classList.remove('active');
+    button.setAttribute('aria-pressed', 'false');
+  });
+
+  loadEvents({});
+  loadPopularEvents();
 }
 
 function formatDate(dateString) {
@@ -183,23 +286,32 @@ function formatDate(dateString) {
 }
 
 function truncateAddress(address, maxLength = 30) {
-  return address.length > maxLength 
-    ? address.substring(0, maxLength) + '...' 
+  return address.length > maxLength
+    ? address.substring(0, maxLength) + '...'
     : address;
 }
 
-// Инициализация
 document.addEventListener('DOMContentLoaded', () => {
-  if (document.getElementById('eventsGrid')) {
-    loadEvents({});
-
-    const loadMoreBtn = document.getElementById('loadMoreBtn');
-    if (loadMoreBtn) {
-      loadMoreBtn.addEventListener('click', renderNextPage);
-    }
-    
-    // Авто-применение фильтров при изменении
-    document.getElementById('dateFilter')?.addEventListener('change', applyFilters);
-    document.getElementById('categoryFilter')?.addEventListener('change', applyFilters);
+  if (!document.getElementById('eventsGrid')) {
+    return;
   }
+
+  loadEvents({});
+  loadPopularEvents();
+
+  const loadMoreBtn = document.getElementById('loadMoreBtn');
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', renderNextPage);
+  }
+
+  document.getElementById('dateFromFilter')?.addEventListener('change', applyFilters);
+  document.getElementById('dateToFilter')?.addEventListener('change', applyFilters);
+
+  document.querySelectorAll('.filter-chip').forEach((button) => {
+    button.addEventListener('click', () => {
+      button.classList.toggle('active');
+      button.setAttribute('aria-pressed', button.classList.contains('active') ? 'true' : 'false');
+      applyFilters();
+    });
+  });
 });

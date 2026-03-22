@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, Index, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Index, Integer, LargeBinary, Text, text
 from sqlalchemy.dialects.postgresql import CITEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,21 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
             "deleted_at IS NULL OR is_active = FALSE",
             name="chk_users_deleted_requires_inactive",
         ),
+        CheckConstraint(
+            "photo_size_bytes IS NULL OR photo_size_bytes BETWEEN 1 AND 5242880",
+            name="chk_users_photo_size_limit",
+        ),
+        CheckConstraint(
+            "photo_content_type IS NULL OR btrim(photo_content_type) <> ''",
+            name="chk_users_photo_content_type_not_blank",
+        ),
+        CheckConstraint(
+            """
+            (photo_data IS NULL AND photo_content_type IS NULL AND photo_size_bytes IS NULL)
+            OR (photo_data IS NOT NULL AND photo_content_type IS NOT NULL AND photo_size_bytes IS NOT NULL)
+            """,
+            name="chk_users_photo_fields_consistency",
+        ),
         Index(
             "idx_users_active",
             "id",
@@ -51,6 +66,9 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     university: Mapped[str | None] = mapped_column(Text, nullable=True)
     faculty: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    photo_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -76,3 +94,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         lazy="selectin",
         passive_deletes=True,
     )
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_data is not None

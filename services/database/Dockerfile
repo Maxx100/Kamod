@@ -12,4 +12,4 @@ COPY services/database .
 
 RUN mkdir -p /app/logs
 
-CMD ["python", "main.py"]
+CMD ["sh", "/app/entrypoint.sh"]

@@ -172,9 +172,10 @@ SQL-бэкапы:
 
 ```bash
 docker compose up -d postgres
-docker compose run --rm database alembic upgrade head
 docker compose up -d database
 ```
+
+`database` контейнер теперь сам применяет `alembic upgrade head` при старте.
 
 ### 4. Документация API
 
@@ -188,6 +189,16 @@ docker compose up -d database
 
 - `alembic/versions/0001_create_event_service_schema.py`
 - `alembic/versions/0002_add_telegram_notification_jobs.py`
+
+### Как ускорить создание миграций
+
+Для типовых изменений схемы можно использовать автогенерацию:
+
+```bash
+docker compose exec database alembic revision --autogenerate -m "your_message"
+```
+
+Дальше обязательно проверьте файл миграции вручную (особенно для rename/удалений и data-migration).
 
 ## Примечания
 

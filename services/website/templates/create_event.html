@@ -26,13 +26,25 @@
       </select>
     </div>
     <div class="form-group"><label for="eventDate">Дата и время *</label><input id="eventDate" type="datetime-local" required></div>
-    <div class="form-group" id="addressGroup"><label for="address">Адрес *</label><input id="address" required></div>
+    <div class="form-group" id="addressGroup">
+      <label for="address">Адрес *</label>
+      <input id="address" list="addressSuggestions" required>
+      <datalist id="addressSuggestions"></datalist>
+    </div>
     <div class="form-group"><label for="description">Описание *</label><textarea id="description" required></textarea></div>
     <div class="form-group"><label for="eventImage">Обложка (до 10 МБ)</label><input type="file" id="eventImage" accept="image/*"></div>
     <div class="form-group">
       <label for="isPaid" class="checkbox-label">Платное мероприятие <input type="checkbox" id="isPaid"></label>
     </div>
     <div class="form-group hidden" id="priceGroup"><label for="price">Цена (₽)</label><input id="price" type="number" min="0"></div>
+
+    <div class="form-group">
+      <label>Билеты</label>
+      <div id="ticketItemsList" style="display:grid; gap:10px;"></div>
+      <button id="addTicketItemBtn" type="button" class="btn btn-outline" style="margin-top:10px;">+ Добавить позицию</button>
+      <p style="margin-top:8px; color:var(--grey-color); font-size:14px;">Если добавить позиции, их цены будут использоваться для события (обратная совместимость со старым полем цены сохранена).</p>
+    </div>
+
     <div id="formError" class="error hidden"></div>
     <div id="formSuccess" class="success hidden"></div>
     <button type="submit" class="btn btn-primary" style="width:100%;">Опубликовать</button>
@@ -42,6 +54,11 @@
 
 {% block scripts %}
 <script>
+let createTicketItems = [];
+let addressSuggestTimer = null;
+let createAddressSuggestions = [];
+let createAddressSelected = false;
+
 function toggleCreateEventFormatFields() {
   const isOnline = document.getElementById('eventFormat').value === 'online';
   const addressGroup = document.getElementById('addressGroup');
@@ -51,6 +68,113 @@ function toggleCreateEventFormatFields() {
   addressInput.required = !isOnline;
   if (isOnline) {
     addressInput.value = '';
+  }
+}
+
+function renderCreateTicketItems() {
+  const listEl = document.getElementById('ticketItemsList');
+  if (!listEl) return;
+
+  if (!createTicketItems.length) {
+    listEl.innerHTML = '<div style="color:var(--grey-color); font-size:14px;">Пока нет добавленных позиций</div>';
+    return;
+  }
+
+  listEl.innerHTML = createTicketItems.map((item, index) => `
+    <div class="card" style="padding:12px;">
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="ticketTitle${index}">Название позиции</label>
+        <input id="ticketTitle${index}" class="ticket-title-input" data-index="${index}" value="${String(item.title || '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="ticketDescription${index}">Описание</label>
+        <textarea id="ticketDescription${index}" class="ticket-description-input" data-index="${index}">${String(item.description || '')}</textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="ticketPrice${index}">Цена (₽)</label>
+        <input id="ticketPrice${index}" class="ticket-price-input" data-index="${index}" type="number" min="0" value="${Number.isFinite(Number(item.price)) ? Number(item.price) : 0}">
+      </div>
+      <button class="btn btn-danger remove-ticket-btn" type="button" data-index="${index}">Удалить</button>
+    </div>
+  `).join('');
+
+  listEl.querySelectorAll('.ticket-title-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index) || !createTicketItems[index]) return;
+      createTicketItems[index].title = event.target.value;
+    });
+  });
+
+  listEl.querySelectorAll('.ticket-description-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index) || !createTicketItems[index]) return;
+      createTicketItems[index].description = event.target.value;
+    });
+  });
+
+  listEl.querySelectorAll('.ticket-price-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index) || !createTicketItems[index]) return;
+      const price = Number(event.target.value);
+      createTicketItems[index].price = Number.isFinite(price) && price >= 0 ? Math.floor(price) : 0;
+    });
+  });
+
+  listEl.querySelectorAll('.remove-ticket-btn').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index)) return;
+      createTicketItems = createTicketItems.filter((_, itemIndex) => itemIndex !== index);
+      renderCreateTicketItems();
+    });
+  });
+}
+
+function normalizeCreateTicketItems() {
+  return createTicketItems
+    .map((item) => ({
+      title: String(item.title || '').trim(),
+      description: String(item.description || '').trim(),
+      price: Math.max(0, Number.isFinite(Number(item.price)) ? Math.floor(Number(item.price)) : 0)
+    }))
+    .filter((item) => item.title || item.description || item.price > 0);
+}
+
+function validateCreateTicketItems(items) {
+  for (const item of items) {
+    if (!item.title) {
+      return 'У каждой позиции билета должно быть название';
+    }
+  }
+  return null;
+}
+
+async function loadAddressSuggestions(query) {
+  const datalist = document.getElementById('addressSuggestions');
+  if (!datalist) return;
+  if (!query || query.trim().length < 2) {
+    datalist.innerHTML = '';
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/maps/address-suggest?q=${encodeURIComponent(query.trim())}`);
+    if (!response.ok) {
+      datalist.innerHTML = '';
+      return;
+    }
+    const payload = await response.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    createAddressSuggestions = items;
+    createAddressSelected = items.some((item) => String(item) === query.trim());
+    datalist.innerHTML = items.map((item) => `<option value="${String(item).replace(/"/g, '&quot;')}"></option>`).join('');
+  } catch {
+    createAddressSuggestions = [];
+    createAddressSelected = false;
+    datalist.innerHTML = '';
   }
 }
 
@@ -64,7 +188,24 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('isPaid').addEventListener('change', (e) => {
     document.getElementById('priceGroup').classList.toggle('hidden', !e.target.checked);
   });
+  document.getElementById('addTicketItemBtn').addEventListener('click', () => {
+    createTicketItems.push({ title: '', description: '', price: 0 });
+    renderCreateTicketItems();
+  });
+
+  document.getElementById('address').addEventListener('input', (event) => {
+    createAddressSelected = false;
+    if (addressSuggestTimer) clearTimeout(addressSuggestTimer);
+    addressSuggestTimer = setTimeout(() => {
+      loadAddressSuggestions(event.target.value);
+    }, 350);
+  });
+  document.getElementById('address').addEventListener('change', (event) => {
+    createAddressSelected = createAddressSuggestions.some((item) => String(item) === event.target.value.trim());
+  });
+
   toggleCreateEventFormatFields();
+  renderCreateTicketItems();
 });
 
 document.getElementById('createEventForm').addEventListener('submit', async (e) => {
@@ -83,14 +224,24 @@ document.getElementById('createEventForm').addEventListener('submit', async (e) 
   }
 
   const formData = new FormData();
+  const ticketItems = normalizeCreateTicketItems();
+  const ticketValidationError = validateCreateTicketItems(ticketItems);
+  if (ticketValidationError) {
+    errorEl.textContent = ticketValidationError;
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
   formData.append('title', document.getElementById('title').value);
   formData.append('category', document.getElementById('category').value);
   formData.append('eventFormat', document.getElementById('eventFormat').value);
   formData.append('eventDate', document.getElementById('eventDate').value);
   formData.append('address', document.getElementById('address').value);
+  formData.append('addressSelected', String(createAddressSelected));
   formData.append('description', document.getElementById('description').value);
   formData.append('isPaid', String(document.getElementById('isPaid').checked));
   formData.append('price', document.getElementById('isPaid').checked ? (document.getElementById('price').value || '0') : '0');
+  formData.append('ticketItems', JSON.stringify(ticketItems));
   if (file) formData.append('image', file);
 
   try {

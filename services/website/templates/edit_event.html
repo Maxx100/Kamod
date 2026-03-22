@@ -26,13 +26,23 @@
       </select>
     </div>
     <div class="form-group"><label for="eventDate">Дата и время *</label><input id="eventDate" type="datetime-local" required></div>
-    <div class="form-group" id="addressGroup"><label for="address">Адрес *</label><input id="address" required></div>
+    <div class="form-group" id="addressGroup">
+      <label for="address">Адрес *</label>
+      <input id="address" list="addressSuggestions" required>
+      <datalist id="addressSuggestions"></datalist>
+    </div>
     <div class="form-group"><label for="description">Описание *</label><textarea id="description" required></textarea></div>
     <div class="form-group"><label for="eventImage">Новая обложка (до 10 МБ)</label><input type="file" id="eventImage" accept="image/*"></div>
     <div class="form-group">
       <label for="isPaid" class="checkbox-label">Платное мероприятие <input type="checkbox" id="isPaid"></label>
     </div>
     <div class="form-group hidden" id="priceGroup"><label for="price">Цена (₽)</label><input id="price" type="number" min="0"></div>
+    <div class="form-group">
+      <label>Билеты</label>
+      <div id="ticketItemsList" style="display:grid; gap:10px;"></div>
+      <button id="addTicketItemBtn" type="button" class="btn btn-outline" style="margin-top:10px;">+ Добавить позицию</button>
+      <p style="margin-top:8px; color:var(--grey-color); font-size:14px;">Можно добавить несколько позиций с разными ценами.</p>
+    </div>
     <div id="formError" class="error hidden"></div>
     <div id="formSuccess" class="success hidden"></div>
     <div style="display:flex; gap:12px; flex-wrap:wrap;">
@@ -47,6 +57,10 @@
 <script>
 const editEventParams = new URLSearchParams(window.location.search);
 const editEventId = editEventParams.get('id');
+let editTicketItems = [];
+let addressSuggestTimer = null;
+let editAddressSuggestions = [];
+let editAddressSelected = false;
 
 function toggleEditEventFormatFields() {
   const isOnline = document.getElementById('eventFormat').value === 'online';
@@ -78,6 +92,113 @@ function toDatetimeLocalInput(value) {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
+function renderEditTicketItems() {
+  const listEl = document.getElementById('ticketItemsList');
+  if (!listEl) return;
+
+  if (!editTicketItems.length) {
+    listEl.innerHTML = '<div style="color:var(--grey-color); font-size:14px;">Пока нет добавленных позиций</div>';
+    return;
+  }
+
+  listEl.innerHTML = editTicketItems.map((item, index) => `
+    <div class="card" style="padding:12px;">
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="ticketTitle${index}">Название позиции</label>
+        <input id="ticketTitle${index}" class="ticket-title-input" data-index="${index}" value="${String(item.title || '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="ticketDescription${index}">Описание</label>
+        <textarea id="ticketDescription${index}" class="ticket-description-input" data-index="${index}">${String(item.description || '')}</textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="ticketPrice${index}">Цена (₽)</label>
+        <input id="ticketPrice${index}" class="ticket-price-input" data-index="${index}" type="number" min="0" value="${Number.isFinite(Number(item.price)) ? Number(item.price) : 0}">
+      </div>
+      <button class="btn btn-danger remove-ticket-btn" type="button" data-index="${index}">Удалить</button>
+    </div>
+  `).join('');
+
+  listEl.querySelectorAll('.ticket-title-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index) || !editTicketItems[index]) return;
+      editTicketItems[index].title = event.target.value;
+    });
+  });
+
+  listEl.querySelectorAll('.ticket-description-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index) || !editTicketItems[index]) return;
+      editTicketItems[index].description = event.target.value;
+    });
+  });
+
+  listEl.querySelectorAll('.ticket-price-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index) || !editTicketItems[index]) return;
+      const price = Number(event.target.value);
+      editTicketItems[index].price = Number.isFinite(price) && price >= 0 ? Math.floor(price) : 0;
+    });
+  });
+
+  listEl.querySelectorAll('.remove-ticket-btn').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const index = Number(event.target.dataset.index);
+      if (!Number.isInteger(index)) return;
+      editTicketItems = editTicketItems.filter((_, itemIndex) => itemIndex !== index);
+      renderEditTicketItems();
+    });
+  });
+}
+
+function normalizeEditTicketItems() {
+  return editTicketItems
+    .map((item) => ({
+      title: String(item.title || '').trim(),
+      description: String(item.description || '').trim(),
+      price: Math.max(0, Number.isFinite(Number(item.price)) ? Math.floor(Number(item.price)) : 0)
+    }))
+    .filter((item) => item.title || item.description || item.price > 0);
+}
+
+function validateEditTicketItems(items) {
+  for (const item of items) {
+    if (!item.title) {
+      return 'У каждой позиции билета должно быть название';
+    }
+  }
+  return null;
+}
+
+async function loadAddressSuggestions(query) {
+  const datalist = document.getElementById('addressSuggestions');
+  if (!datalist) return;
+  if (!query || query.trim().length < 2) {
+    datalist.innerHTML = '';
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/maps/address-suggest?q=${encodeURIComponent(query.trim())}`);
+    if (!response.ok) {
+      datalist.innerHTML = '';
+      return;
+    }
+    const payload = await response.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    editAddressSuggestions = items;
+    editAddressSelected = items.some((item) => String(item) === query.trim());
+    datalist.innerHTML = items.map((item) => `<option value="${String(item).replace(/"/g, '&quot;')}"></option>`).join('');
+  } catch {
+    editAddressSuggestions = [];
+    editAddressSelected = false;
+    datalist.innerHTML = '';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const user = JSON.parse(localStorage.getItem('user'));
   const token = localStorage.getItem('token');
@@ -94,6 +215,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('eventFormat').addEventListener('change', toggleEditEventFormatFields);
   document.getElementById('isPaid').addEventListener('change', (e) => {
     document.getElementById('priceGroup').classList.toggle('hidden', !e.target.checked);
+  });
+  document.getElementById('addTicketItemBtn').addEventListener('click', () => {
+    editTicketItems.push({ title: '', description: '', price: 0 });
+    renderEditTicketItems();
+  });
+  document.getElementById('address').addEventListener('input', (event) => {
+    editAddressSelected = false;
+    if (addressSuggestTimer) clearTimeout(addressSuggestTimer);
+    addressSuggestTimer = setTimeout(() => {
+      loadAddressSuggestions(event.target.value);
+    }, 350);
+  });
+  document.getElementById('address').addEventListener('change', (event) => {
+    editAddressSelected = editAddressSuggestions.some((item) => String(item) === event.target.value.trim());
   });
 
   const response = await fetch(`/api/events/${editEventId}`, {
@@ -115,9 +250,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('eventFormat').value = event.format || 'offline';
   document.getElementById('eventDate').value = toDatetimeLocalInput(event.eventDate);
   document.getElementById('address').value = event.address || '';
+  editAddressSelected = true;
   document.getElementById('description').value = event.description || '';
   document.getElementById('isPaid').checked = Boolean(event.isPaid);
   document.getElementById('price').value = event.isPaid ? String(event.price || 0) : '';
+  editTicketItems = Array.isArray(event.tickets)
+    ? event.tickets.map((item) => ({
+      title: item.title || '',
+      description: item.description || '',
+      price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
+    }))
+    : [];
+  renderEditTicketItems();
   document.getElementById('priceGroup').classList.toggle('hidden', !event.isPaid);
   toggleEditEventFormatFields();
 });
@@ -144,14 +288,24 @@ document.getElementById('editEventForm').addEventListener('submit', async (e) =>
   }
 
   const formData = new FormData();
+  const ticketItems = normalizeEditTicketItems();
+  const ticketValidationError = validateEditTicketItems(ticketItems);
+  if (ticketValidationError) {
+    errorEl.textContent = ticketValidationError;
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
   formData.append('title', document.getElementById('title').value);
   formData.append('category', document.getElementById('category').value);
   formData.append('eventFormat', document.getElementById('eventFormat').value);
   formData.append('eventDate', document.getElementById('eventDate').value);
   formData.append('address', document.getElementById('address').value);
+  formData.append('addressSelected', String(editAddressSelected));
   formData.append('description', document.getElementById('description').value);
   formData.append('isPaid', String(document.getElementById('isPaid').checked));
   formData.append('price', document.getElementById('isPaid').checked ? (document.getElementById('price').value || '0') : '0');
+  formData.append('ticketItems', JSON.stringify(ticketItems));
   if (file) formData.append('image', file);
 
   try {

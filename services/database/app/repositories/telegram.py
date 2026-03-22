@@ -53,7 +53,10 @@ class TelegramJobRepository:
                 Event.status == EventStatus.PUBLISHED,
                 EventRegistration.status == RegistrationStatus.REGISTERED,
             )
-            .options(selectinload(TelegramNotificationJob.event))
+            .options(
+                selectinload(TelegramNotificationJob.event),
+                selectinload(TelegramNotificationJob.user),
+            )
             .order_by(TelegramNotificationJob.scheduled_at.asc(), TelegramNotificationJob.id.asc())
             .limit(params.limit)
         )

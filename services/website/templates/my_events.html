@@ -45,6 +45,36 @@
 let myEventsQrInstance = null;
 let myEventsScanInProgress = false;
 
+function logMyEventsScan(message, extra = null) {
+  if (extra !== null) {
+    console.log(`[QR][my-events] ${message}`, extra);
+    return;
+  }
+  console.log(`[QR][my-events] ${message}`);
+}
+
+async function ensureMyEventsCameraPermission(statusEl) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    logMyEventsScan('getUserMedia is not available');
+    statusEl.textContent = 'Браузер не поддерживает доступ к камере. Вставьте ссылку вручную.';
+    statusEl.style.color = 'var(--orange-tag-color)';
+    return false;
+  }
+
+  try {
+    logMyEventsScan('Requesting camera permission');
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    stream.getTracks().forEach((track) => track.stop());
+    logMyEventsScan('Camera permission granted');
+    return true;
+  } catch (error) {
+    logMyEventsScan('Camera permission denied or unavailable', error);
+    statusEl.textContent = 'Нет доступа к камере. Разрешите доступ в браузере или вставьте ссылку вручную.';
+    statusEl.style.color = 'var(--orange-tag-color)';
+    return false;
+  }
+}
+
 function getMyEventStatusLabel(event) {
   if (event.status === 'cancelled') return 'Отменено';
   if (event.status === 'completed') return 'Завершено';
@@ -52,6 +82,7 @@ function getMyEventStatusLabel(event) {
 }
 
 async function submitMyEventsScan(scanUrl) {
+  logMyEventsScan('Submitting scanned link', scanUrl);
   const token = localStorage.getItem('token');
   if (!token) {
     window.location.href = '/login';
@@ -75,6 +106,7 @@ async function submitMyEventsScan(scanUrl) {
   }
 
   if (!response.ok) {
+    logMyEventsScan('Scan API returned error', payload);
     document.getElementById('myEventsScanStatus').textContent = payload?.message || 'Ошибка сканирования';
     document.getElementById('myEventsScanStatus').style.color = 'var(--red-color)';
     return false;
@@ -88,13 +120,20 @@ async function submitMyEventsScan(scanUrl) {
 
 async function startMyEventsScanner() {
   const statusEl = document.getElementById('myEventsScanStatus');
+  logMyEventsScan('Starting scanner');
   if (!window.Html5Qrcode) {
+    logMyEventsScan('Html5Qrcode is not available');
     statusEl.textContent = 'Камера не поддерживается. Вставьте ссылку вручную.';
     statusEl.style.color = 'var(--orange-tag-color)';
     return;
   }
 
   if (myEventsScanInProgress) return;
+  const permissionGranted = await ensureMyEventsCameraPermission(statusEl);
+  if (!permissionGranted) {
+    return;
+  }
+
   myEventsScanInProgress = true;
 
   try {
@@ -105,6 +144,7 @@ async function startMyEventsScanner() {
       { facingMode: 'environment' },
       { fps: 10, qrbox: 220 },
       async (decodedText) => {
+        logMyEventsScan('QR decoded', decodedText);
         const done = await submitMyEventsScan(decodedText);
         if (done) {
           stopMyEventsScanner();
@@ -112,7 +152,8 @@ async function startMyEventsScanner() {
       },
       () => {}
     );
-  } catch {
+  } catch (error) {
+    logMyEventsScan('Failed to start scanner', error);
     myEventsScanInProgress = false;
     statusEl.textContent = 'Не удалось открыть камеру. Вставьте ссылку вручную.';
     statusEl.style.color = 'var(--orange-tag-color)';
@@ -120,6 +161,7 @@ async function startMyEventsScanner() {
 }
 
 function stopMyEventsScanner() {
+  logMyEventsScan('Stopping scanner');
   const reader = document.getElementById('myEventsScanReader');
   if (!myEventsQrInstance) {
     myEventsScanInProgress = false;

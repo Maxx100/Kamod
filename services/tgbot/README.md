@@ -12,7 +12,7 @@ Telegram-микросервис для уведомлений и attendance-оп
 - `TG_DEFAULT_CHAT_ID` - chat id получателя по умолчанию (для demo)
 - `TG_DEFAULT_USERNAME` - username получателя по умолчанию (опционально)
 - `TG_DB_BASE_URL` - base URL DB-сервиса (например, `http://database:6677`)
-- `TG_DB_POLL_SECONDS` - период проверки due jobs (по ТЗ: `3600`)
+- `TG_DB_POLL_SECONDS` - период проверки due jobs (по ТЗ: `60`)
 - `TG_DB_DUE_LIMIT` - лимит задач за одну проверку
 - `TG_DB_TIMEOUT_SECONDS` - timeout HTTP к DB-сервису
 - `TG_WORKER_ID` - id воркера бота для `claim`

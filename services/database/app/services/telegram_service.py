@@ -12,10 +12,12 @@ from app.models import Event, EventRegistration, TelegramAttendanceAnswer, Teleg
 from app.models.enums import EventStatus, RegistrationStatus, TelegramJobKind, TelegramJobStatus
 from app.models.user_telegram_settings import UserTelegramSettings
 from app.repositories import (
+    EventRepository,
     RegistrationRepository,
     TelegramAttendanceAnswerRepository,
     TelegramJobRepository,
     TelegramSettingsRepository,
+    UserRepository,
 )
 from app.schemas.tg import (
     TelegramAttendanceAnswerRequest,
@@ -25,6 +27,8 @@ from app.schemas.tg import (
     TelegramDueJobResponse,
     TelegramDueJobsQuery,
     TelegramFailJobRequest,
+    TelegramLinkStartRequest,
+    TelegramLinkStartResponse,
     TelegramOperationResponse,
 )
 from app.services.mappers import to_tg_due_job_response
@@ -34,9 +38,46 @@ class TelegramService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.registrations = RegistrationRepository(session)
+        self.events = EventRepository(session)
         self.settings = TelegramSettingsRepository(session)
         self.jobs = TelegramJobRepository(session)
         self.answers = TelegramAttendanceAnswerRepository(session)
+        self.users = UserRepository(session)
+
+    def link_start(self, payload: TelegramLinkStartRequest) -> TelegramLinkStartResponse:
+        normalized_username = payload.username.strip()
+        if not normalized_username:
+            return TelegramLinkStartResponse(linked=False)
+
+        with self.session.begin():
+            user = self.users.get_by_telegram_username(normalized_username)
+            if user is None:
+                return TelegramLinkStartResponse(linked=False)
+
+            settings = self.settings.get_by_user_id(user.id)
+            if settings is None:
+                settings = UserTelegramSettings(
+                    user_id=user.id,
+                    telegram_user_id=payload.telegram_user_id,
+                    telegram_chat_id=payload.chat_id,
+                    reminder_24h_enabled=True,
+                    reminder_1h_enabled=True,
+                )
+                self.session.add(settings)
+            else:
+                settings.telegram_user_id = payload.telegram_user_id
+                settings.telegram_chat_id = payload.chat_id
+                settings.reminder_24h_enabled = True
+                settings.reminder_1h_enabled = True
+
+            active_registrations = self.registrations.list_active_for_user(user.id)
+            for registration in active_registrations:
+                event = self.events.get_for_update(registration.event_id)
+                if event is None:
+                    continue
+                self.sync_jobs_for_registration(event, registration)
+
+        return TelegramLinkStartResponse(linked=True, user_id=user.id)
 
     def list_due_jobs(self, params: TelegramDueJobsQuery) -> list[TelegramDueJobResponse]:
         jobs = self.jobs.list_due(params)
@@ -164,37 +205,53 @@ class TelegramService:
         settings: UserTelegramSettings | None,
     ) -> dict[TelegramJobKind, dict[str, object]]:
         now = datetime.now(timezone.utc)
+        user = self.users.get_by_id(registration.user_id)
+        telegram_username = (user.telegram or "").strip() if user is not None and user.telegram else ""
+        has_username = bool(telegram_username)
+        resolved_chat_id = (
+            settings.telegram_chat_id
+            if settings is not None and settings.telegram_chat_id is not None
+            else (1 if has_username else None)
+        )
+
+        reminder_24h_enabled = True
+        reminder_1h_enabled = True
+
         if (
             event.deleted_at is not None
             or event.status != EventStatus.PUBLISHED
             or registration.status != RegistrationStatus.REGISTERED
-            or settings is None
-            or settings.telegram_chat_id is None
+            or resolved_chat_id is None
         ):
             return {}
 
         desired_jobs: dict[TelegramJobKind, dict[str, object]] = {}
-        if settings.reminder_24h_enabled:
+        if reminder_24h_enabled:
             scheduled_at = event.event_start_at - timedelta(hours=24)
             if scheduled_at > now:
                 desired_jobs[TelegramJobKind.REMINDER_24H] = {
                     "scheduled_at": scheduled_at,
-                    "telegram_chat_id": settings.telegram_chat_id,
-                    "telegram_user_id": settings.telegram_user_id,
+                    "telegram_chat_id": resolved_chat_id,
+                    "telegram_user_id": settings.telegram_user_id if settings is not None else None,
                     "request_id": None,
                 }
 
-        if settings.reminder_1h_enabled:
+        if reminder_1h_enabled:
             scheduled_at = event.event_start_at - timedelta(hours=1)
             if scheduled_at > now:
                 desired_jobs[TelegramJobKind.REMINDER_1H] = {
                     "scheduled_at": scheduled_at,
-                    "telegram_chat_id": settings.telegram_chat_id,
-                    "telegram_user_id": settings.telegram_user_id,
+                    "telegram_chat_id": resolved_chat_id,
+                    "telegram_user_id": settings.telegram_user_id if settings is not None else None,
                     "request_id": None,
                 }
 
-        if event.attendance_ask_enabled and settings.telegram_user_id is not None:
+        if (
+            event.attendance_ask_enabled
+            and settings is not None
+            and settings.telegram_user_id is not None
+            and settings.telegram_chat_id is not None
+        ):
             scheduled_at = event.event_start_at - timedelta(hours=24)
             if scheduled_at > now:
                 desired_jobs[TelegramJobKind.ATTENDANCE_ASK_24H] = {

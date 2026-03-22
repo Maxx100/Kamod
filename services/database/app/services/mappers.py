@@ -123,11 +123,16 @@ def to_registered_event_list_item(
 
 
 def to_tg_due_job_response(job) -> TelegramDueJobResponse:
+    telegram_username = None
+    if job.user and job.user.telegram:
+        telegram_username = str(job.user.telegram).strip()
+
     return TelegramDueJobResponse(
         job_id=job.id,
         event_id=job.event_id,
         user_id=job.user_id,
         chat_id=job.telegram_chat_id,
+        telegram_username=telegram_username,
         kind=job.kind,
         scheduled_at=job.scheduled_at,
         title=job.event.title,

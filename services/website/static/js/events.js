@@ -204,8 +204,83 @@ function getSelectedTags() {
     .filter(Boolean);
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function levenshteinDistance(left, right) {
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+
+  const rows = left.length + 1;
+  const cols = right.length + 1;
+  const matrix = Array.from({ length: rows }, () => new Array(cols).fill(0));
+
+  for (let row = 0; row < rows; row += 1) matrix[row][0] = row;
+  for (let col = 0; col < cols; col += 1) matrix[0][col] = col;
+
+  for (let row = 1; row < rows; row += 1) {
+    for (let col = 1; col < cols; col += 1) {
+      const cost = left[row - 1] === right[col - 1] ? 0 : 1;
+      matrix[row][col] = Math.min(
+        matrix[row - 1][col] + 1,
+        matrix[row][col - 1] + 1,
+        matrix[row - 1][col - 1] + cost
+      );
+    }
+  }
+
+  return matrix[rows - 1][cols - 1];
+}
+
+function getTypoTolerance(queryLength) {
+  if (queryLength <= 4) return 0;
+  if (queryLength <= 8) return 1;
+  return 2;
+}
+
+function titleMatchesQuery(eventTitle, rawQuery) {
+  const query = normalizeSearchText(rawQuery);
+  if (!query) {
+    return true;
+  }
+
+  const normalizedTitle = normalizeSearchText(eventTitle);
+  if (!normalizedTitle) {
+    return false;
+  }
+
+  if (normalizedTitle.includes(query)) {
+    return true;
+  }
+
+  const titleWords = normalizedTitle.split(' ').filter(Boolean);
+  const queryWords = query.split(' ').filter(Boolean);
+
+  const fullDistance = levenshteinDistance(normalizedTitle, query);
+  const fullTolerance = getTypoTolerance(query.length);
+  if (fullDistance <= fullTolerance) {
+    return true;
+  }
+
+  return queryWords.every((queryWord) => {
+    const wordTolerance = getTypoTolerance(queryWord.length);
+    return titleWords.some((titleWord) => {
+      if (titleWord.includes(queryWord) || queryWord.includes(titleWord)) {
+        return true;
+      }
+      return levenshteinDistance(titleWord, queryWord) <= wordTolerance;
+    });
+  });
+}
+
 function getCurrentFilters() {
   return {
+    title: document.getElementById('titleFilter')?.value || '',
     dateFrom: document.getElementById('dateFromFilter')?.value || '',
     dateTo: document.getElementById('dateToFilter')?.value || '',
     tags: getSelectedTags()
@@ -213,7 +288,12 @@ function getCurrentFilters() {
 }
 
 function hasActiveFilters(filters = {}) {
-  return Boolean(filters.dateFrom || filters.dateTo || (Array.isArray(filters.tags) && filters.tags.length));
+  return Boolean(
+    normalizeSearchText(filters.title || '')
+      || filters.dateFrom
+      || filters.dateTo
+      || (Array.isArray(filters.tags) && filters.tags.length)
+  );
 }
 
 async function loadEvents(filters = {}) {
@@ -238,7 +318,9 @@ async function loadEvents(filters = {}) {
       throw new Error('Некорректный формат ответа');
     }
 
-    allLoadedEvents = [...events].sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
+    allLoadedEvents = [...events]
+      .filter((event) => titleMatchesQuery(event.title, filters.title))
+      .sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
 
     if (!hasActiveFilters(filters)) {
       const popularEvents = getPopularEvents(allLoadedEvents);
@@ -264,9 +346,11 @@ function applyFilters() {
 }
 
 function resetFilters() {
+  const titleFilter = document.getElementById('titleFilter');
   const dateFromFilter = document.getElementById('dateFromFilter');
   const dateToFilter = document.getElementById('dateToFilter');
 
+  if (titleFilter) titleFilter.value = '';
   if (dateFromFilter) dateFromFilter.value = '';
   if (dateToFilter) dateToFilter.value = '';
 
@@ -304,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadMoreBtn.addEventListener('click', renderNextPage);
   }
 
+  document.getElementById('titleFilter')?.addEventListener('input', applyFilters);
   document.getElementById('dateFromFilter')?.addEventListener('change', applyFilters);
   document.getElementById('dateToFilter')?.addEventListener('change', applyFilters);
 

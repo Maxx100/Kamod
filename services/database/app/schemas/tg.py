@@ -38,6 +38,7 @@ class TelegramDueJobResponse(APIModel):
     event_id: UUID
     user_id: UUID
     chat_id: int
+    telegram_username: str | None = None
     kind: TelegramJobKind
     scheduled_at: AwareDatetime
     title: str
@@ -90,3 +91,15 @@ class TelegramAttendanceAnswerRequest(APIModel):
     @classmethod
     def validate_utc(cls, value: AwareDatetime) -> AwareDatetime:
         return _ensure_utc(value)
+
+
+class TelegramLinkStartRequest(APIModel):
+    telegram_user_id: int = Field(gt=0)
+    chat_id: int = Field(gt=0)
+    username: NonEmptyStr
+
+
+class TelegramLinkStartResponse(APIModel):
+    ok: bool = True
+    linked: bool
+    user_id: UUID | None = None

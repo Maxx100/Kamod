@@ -14,6 +14,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -65,6 +66,7 @@ class DueJob(BaseModel):
     event_id: str
     user_id: str
     chat_id: int
+    telegram_username: str | None = None
     kind: str
     scheduled_at: datetime
     title: str
@@ -130,11 +132,44 @@ attendance_answers: Dict[str, List[AttendanceAnswer]] = {}
 attendance_requests: Dict[str, AttendanceContext] = {}
 
 
+async def _db_link_start(telegram_user_id: int, chat_id: int, username: str) -> bool:
+    if not TG_DB_BASE_URL or db_client is None:
+        return False
+
+    payload = {
+        "telegram_user_id": telegram_user_id,
+        "chat_id": chat_id,
+        "username": username,
+    }
+
+    response = await db_client.post("/v1/tg/link-start", json=payload)
+    if response.status_code >= 400:
+        logger.warning("Failed to link telegram start: status=%s", response.status_code)
+        return False
+
+    data = response.json()
+    return bool(data.get("linked"))
+
+
 @dp.message(CommandStart())
 async def start_handler(message: Message) -> None:
+    linked = False
+    username = message.from_user.username if message.from_user else None
+    if username:
+        try:
+            linked = await _db_link_start(
+                telegram_user_id=message.from_user.id,
+                chat_id=message.chat.id,
+                username=username,
+            )
+        except Exception:
+            logger.exception("Failed to process /start link flow")
+
+    linked_status = "Профиль успешно привязан ✅" if linked else "Профиль не найден по нику, проверь Telegram в профиле на сайте"
     await message.answer(
         "Бот подключен.\n"
         f"Твой chat_id: <code>{message.chat.id}</code>\n"
+        f"{linked_status}\n"
         "Теперь можно получать уведомления."
     )
 
@@ -228,6 +263,63 @@ async def _polling_worker() -> None:
 async def _send_text(chat_id: int, text: str) -> int:
     message = await bot.send_message(chat_id=chat_id, text=text)
     return int(message.message_id)
+
+
+def _normalize_telegram_username(username: str | None) -> str | None:
+    if not username:
+        return None
+    value = username.strip()
+    if not value:
+        return None
+    if not value.startswith("@"):
+        value = f"@{value}"
+    return value
+
+
+async def _can_send_to_recipient(recipient: int | str) -> bool:
+    try:
+        await bot.get_chat(chat_id=recipient)
+        return True
+    except (TelegramForbiddenError, TelegramBadRequest):
+        return False
+
+
+async def _send_text_to_due_job_recipient(job: DueJob, text: str) -> int:
+    recipients: list[int | str] = [job.chat_id]
+    username = _normalize_telegram_username(job.telegram_username)
+    if username:
+        recipients.append(username)
+
+    last_error: Exception | None = None
+    for recipient in recipients:
+        can_send = await _can_send_to_recipient(recipient)
+        if not can_send:
+            logger.warning(
+                "Recipient is not reachable for due job: job_id=%s recipient=%s",
+                job.job_id,
+                recipient,
+            )
+            continue
+
+        try:
+            message = await bot.send_message(chat_id=recipient, text=text)
+            logger.info(
+                "Reminder sent: job_id=%s recipient=%s",
+                job.job_id,
+                recipient,
+            )
+            return int(message.message_id)
+        except Exception as exc:
+            last_error = exc
+            logger.exception(
+                "Failed to send reminder to recipient: job_id=%s recipient=%s",
+                job.job_id,
+                recipient,
+            )
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No reachable Telegram recipient (chat_id/username)")
 
 
 async def _send_attendance(
@@ -328,9 +420,9 @@ async def _db_fetch_due_jobs(from_dt: datetime, to_dt: datetime) -> list[DueJob]
 def _build_job_text(job: DueJob) -> str:
     starts_at = _as_utc_iso(job.starts_at)
     if job.kind == "reminder_24h":
-        return f"Напоминание: <b>{job.title}</b> начнется через 24 часа.\nСтарт: {starts_at}"
+        return f"Напоминание: до мероприятия «{job.title}» осталось 24 часа.\nСтарт: {starts_at}"
     if job.kind == "reminder_1h":
-        return f"Напоминание: <b>{job.title}</b> начнется через 1 час.\nСтарт: {starts_at}"
+        return f"Напоминание: мероприятие «{job.title}» начнётся через час.\nСтарт: {starts_at}"
     return f"<b>{job.title}</b>\nСтарт: {starts_at}\n\nПланируешь прийти?"
 
 
@@ -352,7 +444,7 @@ async def _process_due_job(job: DueJob) -> None:
             if not job.request_id:
                 logger.warning("attendance_ask_24h without request_id, generated=%s", request_id)
         else:
-            message_id = await _send_text(chat_id=job.chat_id, text=_build_job_text(job))
+            message_id = await _send_text_to_due_job_recipient(job=job, text=_build_job_text(job))
 
         await _db_complete_job(job.job_id, telegram_message_id=message_id)
     except Exception as exc:

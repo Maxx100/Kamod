@@ -15,6 +15,8 @@ from app.schemas.tg import (
     TelegramDueJobResponse,
     TelegramDueJobsQuery,
     TelegramFailJobRequest,
+    TelegramLinkStartRequest,
+    TelegramLinkStartResponse,
     TelegramOperationResponse,
 )
 
@@ -75,3 +77,11 @@ def save_attendance_answer(
     service: TelegramServiceDep,
 ) -> TelegramOperationResponse:
     return service.save_attendance_answer(payload)
+
+
+@router.post("/link-start", response_model=TelegramLinkStartResponse)
+def link_start(
+    payload: TelegramLinkStartRequest,
+    service: TelegramServiceDep,
+) -> TelegramLinkStartResponse:
+    return service.link_start(payload)

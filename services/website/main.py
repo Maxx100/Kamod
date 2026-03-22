@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import mimetypes
+import json
+import logging
 from hashlib import sha256
 from pathlib import Path
 from datetime import UTC, datetime, time, timedelta
@@ -34,6 +36,8 @@ JWT_ALGORITHM = os.getenv("WEBSITE_JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_SECONDS = int(os.getenv("WEBSITE_JWT_EXPIRE_SECONDS", str(30 * 24 * 3600)))
 MAX_EVENT_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_PROFILE_IMAGE_BYTES = 5 * 1024 * 1024
+YANDEX_MAPS_API_KEY = os.getenv("YANDEX_MAPS_API_KEY", "").strip()
+EVENT_META_PREFIX = "KAMOD_META_V1:"
 
 CATEGORY_TO_TAG = {
     "hackathon": "hackathon",
@@ -46,6 +50,8 @@ CATEGORY_TO_TAG = {
 }
 
 ALLOWED_COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+logger = logging.getLogger(__name__)
 
 
 class RegisterRequest(BaseModel):
@@ -104,6 +110,10 @@ class UpdateProfileRequest(BaseModel):
 
 class TicketScanRequest(BaseModel):
     scanUrl: str = Field(min_length=1)
+
+
+class EventRegisterRequest(BaseModel):
+    ticketTitle: str | None = None
 
 
 app = FastAPI(title="website-service", version="0.1.0")
@@ -398,15 +408,17 @@ def _resolve_registration_window(
     current_registration_start_at: datetime | None = None,
     current_registration_end_at: datetime | None = None,
 ) -> tuple[datetime, datetime]:
+    now = datetime.now(UTC)
     if (
         current_registration_start_at is not None
         and current_registration_end_at is not None
         and current_registration_start_at <= current_registration_end_at <= event_start_at
+        and current_registration_end_at >= now
     ):
         return current_registration_start_at, current_registration_end_at
 
     registration_end_at = event_start_at - timedelta(minutes=1)
-    registration_start_at = datetime.now(UTC)
+    registration_start_at = now
 
     if registration_end_at <= registration_start_at:
         registration_start_at = event_start_at - timedelta(days=7)
@@ -427,6 +439,225 @@ def _parse_price_minor(is_paid: bool, price: str | None) -> int:
         return 0
 
 
+def _normalize_address_value(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+async def _fetch_yandex_address_suggestions(query: str, limit: int = 7) -> list[str]:
+    normalized_query = query.strip()
+    if len(normalized_query) < 2:
+        return []
+
+    suggestions: list[str] = []
+
+    suggest_params = {
+        "text": normalized_query,
+        "lang": "ru_RU",
+        "types": "geo",
+        "results": min(max(limit, 1), 10),
+    }
+    if YANDEX_MAPS_API_KEY:
+        suggest_params["apikey"] = YANDEX_MAPS_API_KEY
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            suggest_response = await client.get(
+                "https://suggest-maps.yandex.ru/v1/suggest",
+                params=suggest_params,
+            )
+
+        if suggest_response.status_code < 400:
+            payload = _safe_json(suggest_response) or {}
+            rows = payload.get("results", [])
+            for row in rows:
+                title = str((row.get("title") or {}).get("text") or "").strip()
+                subtitle = str((row.get("subtitle") or {}).get("text") or "").strip()
+                value = ", ".join(part for part in [title, subtitle] if part)
+                if value and value not in suggestions:
+                    suggestions.append(value)
+    except Exception:
+        logger.exception("Yandex suggest request failed")
+
+    if suggestions:
+        return suggestions[:limit]
+
+    if not YANDEX_MAPS_API_KEY:
+        return await _fetch_fallback_address_suggestions(normalized_query, limit)
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            geocode_response = await client.get(
+                "https://geocode-maps.yandex.ru/1.x/",
+                params={
+                    "apikey": YANDEX_MAPS_API_KEY,
+                    "format": "json",
+                    "geocode": normalized_query,
+                    "results": min(max(limit, 1), 10),
+                    "lang": "ru_RU",
+                },
+            )
+    except Exception:
+        logger.exception("Yandex geocode request failed")
+        return []
+
+    if geocode_response.status_code >= 400:
+        return await _fetch_fallback_address_suggestions(normalized_query, limit)
+
+    payload = _safe_json(geocode_response) or {}
+    members = (
+        payload.get("response", {})
+        .get("GeoObjectCollection", {})
+        .get("featureMember", [])
+    )
+    for member in members:
+        geo_object = member.get("GeoObject", {})
+        text_value = (
+            geo_object.get("metaDataProperty", {})
+            .get("GeocoderMetaData", {})
+            .get("text")
+            or geo_object.get("name")
+            or ""
+        )
+        text_value = str(text_value).strip()
+        if text_value and text_value not in suggestions:
+            suggestions.append(text_value)
+
+    if suggestions:
+        return suggestions[:limit]
+
+    return await _fetch_fallback_address_suggestions(normalized_query, limit)
+
+
+async def _fetch_fallback_address_suggestions(query: str, limit: int = 7) -> list[str]:
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": query,
+                    "format": "jsonv2",
+                    "limit": min(max(limit, 1), 10),
+                    "addressdetails": 0,
+                },
+                headers={"User-Agent": "kamod-address-suggest/1.0"},
+            )
+    except Exception:
+        logger.exception("Fallback address suggest request failed")
+        return []
+
+    if response.status_code >= 400:
+        return []
+
+    payload = _safe_json(response)
+    if not isinstance(payload, list):
+        return []
+
+    items: list[str] = []
+    for row in payload:
+        value = str(row.get("display_name") or "").strip()
+        if value and value not in items:
+            items.append(value)
+    return items[:limit]
+
+
+async def _is_address_selected_and_valid(address: str) -> bool:
+    suggestions = await _fetch_yandex_address_suggestions(address, limit=10)
+    normalized_address = _normalize_address_value(address)
+    return any(_normalize_address_value(item) == normalized_address for item in suggestions)
+
+
+def _parse_ticket_items(raw_ticket_items: str | None) -> list[dict[str, Any]]:
+    if raw_ticket_items is None:
+        return []
+
+    raw = raw_ticket_items.strip()
+    if not raw:
+        return []
+
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid ticketItems JSON") from exc
+
+    if not isinstance(decoded, list):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="ticketItems must be an array")
+
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(decoded, start=1):
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"ticketItems[{index}] must be an object")
+
+        title = str(item.get("title") or item.get("name") or "").strip()
+        description = str(item.get("description") or "").strip()
+        raw_price = item.get("price", 0)
+        try:
+            price = int(raw_price)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"ticketItems[{index}].price must be an integer") from exc
+
+        if not title:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"ticketItems[{index}].title is required")
+        if price < 0:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"ticketItems[{index}].price must be >= 0")
+
+        normalized.append(
+            {
+                "title": title,
+                "description": description,
+                "price": price,
+            }
+        )
+
+    return normalized
+
+
+def _extract_event_meta(raw_recurrence_rule: Any) -> tuple[list[dict[str, Any]], str | None]:
+    if not isinstance(raw_recurrence_rule, str) or not raw_recurrence_rule:
+        return [], None
+
+    if not raw_recurrence_rule.startswith(EVENT_META_PREFIX):
+        return [], raw_recurrence_rule
+
+    raw_payload = raw_recurrence_rule[len(EVENT_META_PREFIX):]
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse event metadata recurrence_rule")
+        return [], None
+
+    if not isinstance(payload, dict):
+        return [], None
+
+    recurrence_rule = payload.get("recurrence_rule")
+    recurrence_value = str(recurrence_rule).strip() if isinstance(recurrence_rule, str) else None
+    tickets = payload.get("tickets")
+    normalized_tickets = _parse_ticket_items(json.dumps(tickets)) if isinstance(tickets, list) else []
+    return normalized_tickets, recurrence_value
+
+
+def _encode_event_meta(
+    *,
+    tickets: list[dict[str, Any]],
+    recurrence_rule: str | None,
+) -> str | None:
+    recurrence_value = recurrence_rule.strip() if isinstance(recurrence_rule, str) else None
+    if not tickets:
+        return recurrence_value or None
+
+    payload = {
+        "tickets": tickets,
+        "recurrence_rule": recurrence_value,
+    }
+    return f"{EVENT_META_PREFIX}{json.dumps(payload, ensure_ascii=False)}"
+
+
+def _ticket_price_minor(ticket_items: list[dict[str, Any]]) -> int:
+    if not ticket_items:
+        return 0
+    min_price = min(max(int(item.get("price", 0)), 0) for item in ticket_items)
+    return min_price * 100
+
+
 def _build_front_event_payload(
     *,
     title: str,
@@ -437,6 +668,7 @@ def _build_front_event_payload(
     description: str,
     is_paid: bool,
     price: str | None,
+    ticket_items_raw: str | None = None,
     existing_event: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     current_registration_start_at = _parse_api_datetime((existing_event or {}).get("registration_start_at"))
@@ -461,6 +693,13 @@ def _build_front_event_payload(
     elif not contacts:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Address is required for offline event")
 
+    existing_tickets, existing_recurrence_rule = _extract_event_meta((existing_event or {}).get("recurrence_rule"))
+    ticket_items = _parse_ticket_items(ticket_items_raw) if ticket_items_raw is not None else existing_tickets
+    encoded_recurrence_rule = _encode_event_meta(
+        tickets=ticket_items,
+        recurrence_rule=existing_recurrence_rule,
+    )
+
     return {
         "title": title,
         "description": description,
@@ -470,9 +709,9 @@ def _build_front_event_payload(
         "registration_start_at": _to_utc_iso(registration_start_at),
         "registration_end_at": _to_utc_iso(registration_end_at),
         "format": event_format,
-        "price_minor": _parse_price_minor(is_paid, price),
+        "price_minor": _ticket_price_minor(ticket_items) if ticket_items else _parse_price_minor(is_paid, price),
         "contacts": contacts,
-        "recurrence_rule": (existing_event or {}).get("recurrence_rule"),
+        "recurrence_rule": encoded_recurrence_rule,
         "attendance_ask_enabled": (existing_event or {}).get("attendance_ask_enabled", True),
         "max_participants": (existing_event or {}).get("max_participants"),
         "duration_minutes": (existing_event or {}).get("duration_minutes", 120),
@@ -480,6 +719,12 @@ def _build_front_event_payload(
 
 
 def _map_event_from_db(event: dict[str, Any]) -> dict[str, Any]:
+    ticket_items, _ = _extract_event_meta(event.get("recurrence_rule"))
+    price_minor = int(event.get("price_minor") or 0)
+    ticket_price_floor = min((int(item.get("price", 0)) for item in ticket_items), default=0)
+    is_paid = any(int(item.get("price", 0)) > 0 for item in ticket_items) if ticket_items else price_minor > 0
+    price = ticket_price_floor if ticket_items else price_minor // 100
+
     tag_slugs = event.get("tag_slugs") or []
     category = next((slug for slug in tag_slugs if slug != "online"), "other")
     if category not in CATEGORY_TO_TAG:
@@ -502,8 +747,9 @@ def _map_event_from_db(event: dict[str, Any]) -> dict[str, Any]:
         "address": address,
         "description": event.get("description") or "",
         "coverUrl": cover_url,
-        "isPaid": int(event.get("price_minor") or 0) > 0,
-        "price": int(event.get("price_minor") or 0) // 100,
+        "isPaid": is_paid,
+        "price": price,
+        "tickets": ticket_items,
         "organizerId": event.get("created_by_user_id"),
         "organizer": {
             "id": creator.get("id"),
@@ -635,6 +881,11 @@ async def api_health() -> dict[str, Any]:
 @app.get("/api/default-covers")
 async def default_covers() -> dict[str, list[str]]:
     return {"items": _list_default_covers()}
+
+
+@app.get("/api/maps/address-suggest")
+async def suggest_addresses(q: str = Query(default="", min_length=0, max_length=200)) -> dict[str, list[str]]:
+    return {"items": await _fetch_yandex_address_suggestions(q, limit=7)}
 
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
@@ -901,14 +1152,22 @@ async def create_event(
     eventFormat: str = Form(...),
     eventDate: str = Form(...),
     address: str = Form(""),
+    addressSelected: bool = Form(False),
     description: str = Form(...),
     isPaid: bool = Form(False),
     price: str | None = Form(None),
+    ticketItems: str | None = Form(None),
     image: UploadFile | None = File(default=None),
     user_id: str = Depends(_require_user_id),
 ) -> JSONResponse:
     event_start_at = _parse_event_datetime(eventDate)
     event_format = _normalize_event_format(eventFormat)
+
+    if event_format == "offline":
+        if not addressSelected:
+            return JSONResponse(status_code=422, content={"message": "Выберите адрес из выпадающего списка"})
+        if not await _is_address_selected_and_valid(address):
+            return JSONResponse(status_code=422, content={"message": "Адрес не прошёл валидацию, выберите вариант из списка"})
 
     image_bytes: bytes | None = None
     image_content_type: str | None = None
@@ -932,6 +1191,7 @@ async def create_event(
         description=description,
         is_paid=isPaid,
         price=price,
+        ticket_items_raw=ticketItems,
     )
 
     response = await _database_event_write_with_tag_fallback(
@@ -993,9 +1253,11 @@ async def update_event(
     eventFormat: str = Form(...),
     eventDate: str = Form(...),
     address: str = Form(""),
+    addressSelected: bool = Form(False),
     description: str = Form(...),
     isPaid: bool = Form(False),
     price: str | None = Form(None),
+    ticketItems: str | None = Form(None),
     image: UploadFile | None = File(default=None),
     user_id: str = Depends(_require_user_id),
 ) -> JSONResponse:
@@ -1009,6 +1271,12 @@ async def update_event(
     existing_event = _safe_json(existing_response) or {}
     event_start_at = _parse_event_datetime(eventDate)
     event_format = _normalize_event_format(eventFormat)
+    if event_format == "offline":
+        if not addressSelected:
+            return JSONResponse(status_code=422, content={"message": "Выберите адрес из выпадающего списка"})
+        if not await _is_address_selected_and_valid(address):
+            return JSONResponse(status_code=422, content={"message": "Адрес не прошёл валидацию, выберите вариант из списка"})
+
     db_payload = _build_front_event_payload(
         title=title,
         category=category,
@@ -1018,6 +1286,7 @@ async def update_event(
         description=description,
         is_paid=isPaid,
         price=price,
+        ticket_items_raw=ticketItems,
         existing_event=existing_event,
     )
 
@@ -1094,7 +1363,26 @@ async def get_event_image(event_id: str) -> Response:
 
 
 @app.post("/api/events/{event_id}/register")
-async def register_for_event(event_id: str, user_id: str = Depends(_require_user_id)) -> JSONResponse:
+async def register_for_event(
+    event_id: str,
+    payload: EventRegisterRequest | None = None,
+    user_id: str = Depends(_require_user_id),
+) -> JSONResponse:
+    event_response = await _database_request("GET", f"/v1/events/{event_id}")
+    if event_response.status_code >= 400:
+        return JSONResponse(status_code=event_response.status_code, content=_normalize_error_from_response(event_response, "Event not found"))
+
+    event_payload = _safe_json(event_response) or {}
+    ticket_items, _ = _extract_event_meta(event_payload.get("recurrence_rule"))
+    selected_ticket_title = (payload.ticketTitle.strip() if payload and payload.ticketTitle else "")
+
+    if ticket_items:
+        if not selected_ticket_title:
+            return JSONResponse(status_code=422, content={"message": "Выберите билет"})
+        allowed_titles = {str(item.get("title") or "").strip() for item in ticket_items}
+        if selected_ticket_title not in allowed_titles:
+            return JSONResponse(status_code=422, content={"message": "Выбранный билет не найден"})
+
     response = await _database_request("POST", f"/v1/events/{event_id}/registrations", user_id=user_id)
     if response.status_code >= 400:
         return JSONResponse(status_code=response.status_code, content=_normalize_error_from_response(response, "Failed to register for event"))
@@ -1176,13 +1464,16 @@ async def check_in_participant(
 
 @app.post("/api/tickets/scan-link")
 async def scan_ticket_link(payload: TicketScanRequest, user_id: str = Depends(_require_user_id)) -> JSONResponse:
+    logger.info("Scan link request received: user_id=%s", user_id)
     try:
         event_id, participant_user_id = _extract_scan_ids(payload.scanUrl)
     except ValueError as exc:
+        logger.warning("Scan link parse failed: user_id=%s error=%s", user_id, exc)
         return JSONResponse(status_code=422, content={"message": str(exc)})
 
     event_response = await _database_request("GET", f"/v1/events/{event_id}", user_id=user_id)
     if event_response.status_code >= 400:
+        logger.warning("Scan event fetch failed: event_id=%s user_id=%s", event_id, user_id)
         return JSONResponse(
             status_code=event_response.status_code,
             content=_normalize_error_from_response(event_response, "Мероприятие не найдено"),
@@ -1190,6 +1481,7 @@ async def scan_ticket_link(payload: TicketScanRequest, user_id: str = Depends(_r
 
     event_payload = _safe_json(event_response) or {}
     if str(event_payload.get("created_by_user_id")) != str(user_id):
+        logger.warning("Scan forbidden: event_id=%s user_id=%s", event_id, user_id)
         return JSONResponse(status_code=403, content={"message": "Только организатор может сканировать билеты"})
 
     check_response = await _database_request(
@@ -1198,6 +1490,12 @@ async def scan_ticket_link(payload: TicketScanRequest, user_id: str = Depends(_r
         user_id=user_id,
     )
     if check_response.status_code >= 400:
+        logger.warning(
+            "Scan check-in failed: event_id=%s participant_user_id=%s user_id=%s",
+            event_id,
+            participant_user_id,
+            user_id,
+        )
         return JSONResponse(
             status_code=check_response.status_code,
             content=_normalize_error_from_response(check_response, "Не удалось проверить билет"),
@@ -1205,6 +1503,7 @@ async def scan_ticket_link(payload: TicketScanRequest, user_id: str = Depends(_r
 
     participant_payload = await _find_event_participant(event_id, participant_user_id, user_id)
     if participant_payload is None:
+        logger.warning("Scan participant lookup failed: event_id=%s participant_user_id=%s", event_id, participant_user_id)
         return JSONResponse(status_code=404, content={"message": "Участник не найден"})
 
     check_payload = _safe_json(check_response) or {}

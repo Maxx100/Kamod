@@ -21,7 +21,7 @@ from starlette.middleware.wsgi import WSGIMiddleware
 
 DATABASE_API_URL = os.getenv("DATABASE_API_URL", "http://database:5000").rstrip("/")
 TGBOT_API_URL = os.getenv("TGBOT_API_URL", "http://tgbot:8890").rstrip("/")
-WEBSITE_PORT = int(os.getenv("WEBSITE_PORT", "3001"))
+WEBSITE_PORT = int(os.getenv("WEBSITE_PORT", "80"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_COVERS_DIR = STATIC_DIR / "img"

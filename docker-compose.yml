@@ -20,13 +20,13 @@ services:
       dockerfile: ./services/website/Dockerfile
     container_name: website
     ports:
-      - "127.0.0.1:${WEBSITE_PORT:-3001}:${WEBSITE_PORT:-3001}"
+      - "${WEBSITE_PORT:-80}:${WEBSITE_PORT:-80}"
     env_file:
       - ./services/website/.env
     environment:
       DATABASE_API_URL: http://database:5000
       TGBOT_API_URL: http://tgbot:8890
-      WEBSITE_PORT: ${WEBSITE_PORT:-3001}
+      WEBSITE_PORT: ${WEBSITE_PORT:-80}
       WEBSITE_JWT_SECRET: ${WEBSITE_JWT_SECRET:-change-me}
       WEBSITE_JWT_ALGORITHM: HS256
       WEBSITE_JWT_EXPIRE_SECONDS: 2592000

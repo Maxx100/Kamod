@@ -437,8 +437,103 @@ h1, h2, h3 { font-family: 'ALS Gorizont Variable', sans-serif; }
   .grid-2 { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
-  .header { height: auto; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 16px; }
-  .nav-links { flex-wrap: wrap; gap: 12px; }
+  .header {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .logo {
+    font-size: 20px;
+    line-height: 24px;
+  }
+  .nav-links {
+    gap: 14px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+    padding-bottom: 2px;
+  }
+  .nav-links::-webkit-scrollbar {
+    display: none;
+  }
+  .auth-buttons {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  .auth-buttons .auth-user-chip {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .auth-buttons .auth-user-name {
+    max-width: 100%;
+  }
+  .auth-buttons .btn {
+    white-space: nowrap;
+    padding: 8px 14px;
+  }
+  .auth-buttons > a.btn {
+    flex: 1;
+  }
+
+  .container {
+    padding: 0 12px 20px;
+  }
+  .page-title {
+    font-size: 28px;
+    line-height: 34px;
+    margin: 18px 0 8px;
+    word-break: break-word;
+  }
+
+  #heroEvent {
+    display: none;
+  }
+
+  .my-events-header .page-title {
+    font-size: 26px;
+    line-height: 32px;
+  }
+  .my-events-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  .my-events-actions .btn {
+    width: 100%;
+  }
+
+  .profile-header {
+    gap: 14px;
+  }
+  .profile-display-name {
+    font-size: 24px;
+    line-height: 30px;
+  }
+  .profile-photo-controls {
+    width: 100%;
+  }
+  .profile-photo-controls .btn {
+    width: 100%;
+  }
+  .balance-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .balance-value {
+    width: 100%;
+    text-align: left;
+  }
+
   .carousel-title { font-size: 26px; line-height: 32px; }
   .profile-header { flex-direction: column; align-items: flex-start; }
   .section-header { align-items: stretch; }

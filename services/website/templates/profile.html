@@ -39,17 +39,17 @@
 <div class="card" style="max-width:700px; margin: 0 auto 24px;">
   <h3 style="margin-top:0; margin-bottom:14px;">Баланс</h3>
   <div style="display:grid; gap:10px;">
-    <div style="display:flex; justify-content:space-between; gap:12px;">
+    <div class="balance-row" style="display:flex; justify-content:space-between; gap:12px;">
       <span style="color: var(--grey-color);">Доступно</span>
-      <strong id="balanceAvailable">0 ₽</strong>
+      <strong id="balanceAvailable" class="balance-value">0 ₽</strong>
     </div>
-    <div style="display:flex; justify-content:space-between; gap:12px;">
+    <div class="balance-row" style="display:flex; justify-content:space-between; gap:12px;">
       <span style="color: var(--grey-color);">В ожидании (до +24ч после мероприятия)</span>
-      <strong id="balancePending">0 ₽</strong>
+      <strong id="balancePending" class="balance-value">0 ₽</strong>
     </div>
-    <div style="display:flex; justify-content:space-between; gap:12px;">
+    <div class="balance-row" style="display:flex; justify-content:space-between; gap:12px;">
       <span style="color: var(--grey-color);">Всего зачислено</span>
-      <strong id="balanceSettled">0 ₽</strong>
+      <strong id="balanceSettled" class="balance-value">0 ₽</strong>
     </div>
   </div>
   <p id="balanceError" class="hidden" style="margin-top:12px; color: var(--red-color);"></p>

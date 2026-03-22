@@ -136,6 +136,19 @@
   border: 0;
   border-radius: 14px;
 }
+.ticket-choice-option {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--light-grey-color);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--white-color);
+  cursor: pointer;
+}
+.ticket-choice-option.active {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(11, 104, 254, 0.14);
+}
 @media (max-width: 900px) { .event-layout { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -245,6 +258,7 @@
       <button id="ticketChoiceClose" class="btn btn-outline">Закрыть</button>
     </div>
     <div id="ticketChoiceList" style="display:grid; gap:10px;"></div>
+    <p id="ticketChoiceError" class="hidden" style="margin:0; color:var(--red-color);"></p>
     <button id="ticketChoiceConfirm" class="btn btn-primary">Продолжить регистрацию</button>
   </div>
 </div>
@@ -260,6 +274,9 @@ let currentEvent = null;
 let scanQrInstance = null;
 let scanInProgress = false;
 let pendingRegistrationEventId = null;
+let paymentPollTimer = null;
+let ticketChoiceItems = [];
+let selectedTicketTitle = '';
 
 async function fetchDefaultCovers() {
   if (defaultCovers !== null) return defaultCovers;
@@ -498,23 +515,48 @@ function closeScanModal() {
 function openTicketChoiceModal(event) {
   const modal = document.getElementById('ticketChoiceModal');
   const list = document.getElementById('ticketChoiceList');
+  const errorEl = document.getElementById('ticketChoiceError');
   const tickets = Array.isArray(event?.tickets) ? event.tickets : [];
   if (!tickets.length) {
     return;
   }
 
+  errorEl.textContent = '';
+  errorEl.classList.add('hidden');
+
+  ticketChoiceItems = tickets;
+  selectedTicketTitle = String(tickets.find((item) => String(item?.title || '').trim())?.title || '').trim();
+
   list.innerHTML = tickets.map((ticket, index) => {
     const priceLabel = Number(ticket.price || 0) > 0 ? `${Number(ticket.price || 0)} ₽` : 'Бесплатно';
-    const value = String(ticket.title || '').replace(/"/g, '&quot;');
+    const title = String(ticket.title || 'Билет').trim();
+    const isActive = title === selectedTicketTitle;
     return `
-      <label style="display:block; border:1px solid var(--light-grey-color); border-radius:12px; padding:10px;">
-        <input type="radio" name="ticketChoice" value="${value}" ${index === 0 ? 'checked' : ''}>
-        <strong style="margin-left:6px;">${escapeHtml(ticket.title || 'Билет')}</strong>
-        <span style="float:right;">${escapeHtml(priceLabel)}</span>
+      <button
+        type="button"
+        class="ticket-choice-option ${isActive ? 'active' : ''}"
+        data-ticket-index="${index}"
+      >
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+          <strong>${escapeHtml(ticket.title || 'Билет')}</strong>
+          <span>${escapeHtml(priceLabel)}</span>
+        </div>
         ${ticket.description ? `<div style="margin-top:6px; color:var(--black-600);">${escapeHtml(ticket.description)}</div>` : ''}
-      </label>
+      </button>
     `;
   }).join('');
+
+  list.onclick = (clickEvent) => {
+    const option = clickEvent.target.closest('.ticket-choice-option');
+    if (!option) return;
+    const index = Number(option.dataset.ticketIndex);
+    const ticket = ticketChoiceItems[index];
+    if (!ticket) return;
+
+    selectedTicketTitle = String(ticket.title || '').trim();
+    list.querySelectorAll('.ticket-choice-option').forEach((item) => item.classList.remove('active'));
+    option.classList.add('active');
+  };
 
   modal.classList.remove('hidden');
 }
@@ -522,12 +564,119 @@ function openTicketChoiceModal(event) {
 function closeTicketChoiceModal() {
   document.getElementById('ticketChoiceModal').classList.add('hidden');
   pendingRegistrationEventId = null;
+  ticketChoiceItems = [];
+  selectedTicketTitle = '';
+}
+
+function paymentStorageKey(eventId) {
+  return `pendingPayment:${eventId}`;
+}
+
+function savePendingPayment(eventId, paymentId) {
+  if (!eventId || !paymentId) return;
+  localStorage.setItem(paymentStorageKey(eventId), paymentId);
+}
+
+function readPendingPayment(eventId) {
+  if (!eventId) return null;
+  return localStorage.getItem(paymentStorageKey(eventId));
+}
+
+function clearPendingPayment(eventId) {
+  if (!eventId) return;
+  localStorage.removeItem(paymentStorageKey(eventId));
+}
+
+async function pollPaymentStatus(paymentId, eventId) {
+  const token = localStorage.getItem('token');
+  if (!token || !paymentId) return;
+
+  const statusEl = document.getElementById('registerStatus');
+  statusEl.textContent = 'Проверяем оплату...';
+  statusEl.style.color = 'var(--black-600)';
+
+  const response = await fetch(`/api/payments/${encodeURIComponent(paymentId)}/status`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    statusEl.textContent = payload?.detail || payload?.message || 'Не удалось проверить оплату';
+    statusEl.style.color = 'var(--red-color)';
+    clearInterval(paymentPollTimer);
+    paymentPollTimer = null;
+    return;
+  }
+
+  const status = String(payload?.status || 'pending');
+  const registrationConfirmed = Boolean(payload?.registrationConfirmed);
+  const shouldKeepWaiting = Boolean(payload?.shouldKeepWaiting);
+
+  if (status === 'succeeded' && registrationConfirmed) {
+    clearPendingPayment(eventId);
+    clearInterval(paymentPollTimer);
+    paymentPollTimer = null;
+    statusEl.textContent = '✅ Оплата прошла успешно, регистрация подтверждена';
+    statusEl.style.color = 'var(--green-color)';
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    if (user?.id) {
+      await updateRegistrationState(eventId, user.id);
+    }
+    return;
+  }
+
+  if (status === 'cancelled' || status === 'expired') {
+    clearPendingPayment(eventId);
+    clearInterval(paymentPollTimer);
+    paymentPollTimer = null;
+    statusEl.textContent = status === 'expired'
+      ? '⏱ Время оплаты истекло, попробуйте зарегистрироваться заново'
+      : 'Платеж отменен';
+    statusEl.style.color = 'var(--orange-tag-color)';
+    return;
+  }
+
+  if (!shouldKeepWaiting) {
+    clearInterval(paymentPollTimer);
+    paymentPollTimer = null;
+  }
+
+  statusEl.textContent = 'Ожидаем подтверждение оплаты...';
+  statusEl.style.color = 'var(--black-600)';
+}
+
+function startPaymentPolling(paymentId, eventId) {
+  if (!paymentId) return;
+  if (paymentPollTimer) {
+    clearInterval(paymentPollTimer);
+    paymentPollTimer = null;
+  }
+
+  pollPaymentStatus(paymentId, eventId);
+  paymentPollTimer = setInterval(() => {
+    pollPaymentStatus(paymentId, eventId);
+  }, 5000);
+}
+
+function restorePaymentPolling(eventId) {
+  const fromQuery = urlParams.get('paymentId');
+  const fromStorage = readPendingPayment(eventId);
+  const paymentId = fromQuery || fromStorage;
+  if (!paymentId) return;
+  savePendingPayment(eventId, paymentId);
+  startPaymentPolling(paymentId, eventId);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
   if (!eventId) { window.location.href = '/main'; return; }
   await loadEvent(eventId);
   checkAuthAndPermissions(eventId);
+  restorePaymentPolling(eventId);
 });
 
 async function loadEvent(id) {
@@ -689,14 +838,25 @@ async function updateRegistrationState(eventId, userId) {
     registerBtn.textContent = 'Зарегистрироваться';
     registerBtn.className = 'btn btn-primary';
     registerBtn.disabled = false;
-    registerBtn.onclick = () => registerForEvent(eventId);
+    registerBtn.onclick = () => {
+      const tickets = Array.isArray(currentEvent?.tickets) ? currentEvent.tickets : [];
+      if (!tickets.length) {
+        registerForEvent(eventId);
+        return;
+      }
+      pendingRegistrationEventId = eventId;
+      openTicketChoiceModal(currentEvent);
+    };
     cancelRegisterBtn.classList.add('hidden');
     cancelRegisterBtn.disabled = true;
     statusEl.textContent = '';
     return;
   }
 
-  const eventIsPast = currentEvent ? new Date(currentEvent.eventDate) <= new Date() : false;
+  const eventStartAt = currentEvent ? new Date(currentEvent.eventDate) : null;
+  const now = new Date();
+  const cancellationLocked = eventStartAt ? now >= new Date(eventStartAt.getTime() - 60 * 60 * 1000) : false;
+  const eventIsPast = eventStartAt ? eventStartAt <= now : false;
   if (eventIsPast) {
     registerBtn.textContent = 'Зарегистрированы';
     registerBtn.className = 'btn btn-success';
@@ -711,6 +871,14 @@ async function updateRegistrationState(eventId, userId) {
   registerBtn.textContent = 'Зарегистрированы';
   registerBtn.className = 'btn btn-success';
   registerBtn.disabled = true;
+  if (cancellationLocked) {
+    cancelRegisterBtn.classList.add('hidden');
+    cancelRegisterBtn.disabled = true;
+    statusEl.textContent = 'Отмена регистрации недоступна менее чем за 1 час до начала';
+    statusEl.style.color = 'var(--orange-tag-color)';
+    return;
+  }
+
   cancelRegisterBtn.classList.remove('hidden');
   cancelRegisterBtn.disabled = false;
   cancelRegisterBtn.onclick = () => cancelEventRegistration(eventId);
@@ -722,26 +890,66 @@ async function registerForEvent(eventId, ticketTitle = null) {
   const token = localStorage.getItem('token');
   if (!token) { window.location.href = '/login'; return; }
 
-  const requestPayload = ticketTitle ? { ticketTitle } : {};
-  const response = await fetch(`/api/events/${eventId}/register`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestPayload)
-  });
-  const result = await response.json();
   const statusEl = document.getElementById('registerStatus');
-  if (response.ok) {
-    closeTicketChoiceModal();
-    statusEl.textContent = '✅ Вы зарегистрированы!';
-    statusEl.style.color = 'var(--green-color)';
-    const user = JSON.parse(localStorage.getItem('user'));
-    if (user?.id) {
-      await updateRegistrationState(eventId, user.id);
+  const ticketChoiceErrorEl = document.getElementById('ticketChoiceError');
+
+  try {
+    const requestPayload = ticketTitle ? { ticketTitle } : {};
+    const response = await fetch(`/api/events/${eventId}/register`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestPayload)
+    });
+
+    let result = {};
+    try {
+      result = await response.json();
+    } catch {
+      result = {};
     }
-    return;
+
+    if (response.status === 202 && result?.requiresPayment) {
+      closeTicketChoiceModal();
+      if (result.paymentId) {
+        savePendingPayment(eventId, result.paymentId);
+        startPaymentPolling(result.paymentId, eventId);
+      }
+      statusEl.textContent = 'Переход к оплате...';
+      statusEl.style.color = 'var(--black-600)';
+      if (result.confirmationUrl) {
+        window.location.href = result.confirmationUrl;
+        return;
+      }
+      return;
+    }
+
+    if (response.ok) {
+      closeTicketChoiceModal();
+      clearPendingPayment(eventId);
+      statusEl.textContent = '✅ Вы зарегистрированы!';
+      statusEl.style.color = 'var(--green-color)';
+      const user = JSON.parse(localStorage.getItem('user'));
+      if (user?.id) {
+        await updateRegistrationState(eventId, user.id);
+      }
+      return;
+    }
+
+    const errorMessage = result.message || 'Ошибка регистрации';
+    statusEl.textContent = errorMessage;
+    statusEl.style.color = 'var(--red-color)';
+    if (ticketChoiceErrorEl && !document.getElementById('ticketChoiceModal')?.classList.contains('hidden')) {
+      ticketChoiceErrorEl.textContent = errorMessage;
+      ticketChoiceErrorEl.classList.remove('hidden');
+    }
+  } catch {
+    statusEl.textContent = 'Ошибка соединения';
+    statusEl.style.color = 'var(--red-color)';
+    if (ticketChoiceErrorEl && !document.getElementById('ticketChoiceModal')?.classList.contains('hidden')) {
+      ticketChoiceErrorEl.textContent = 'Ошибка соединения';
+      ticketChoiceErrorEl.classList.remove('hidden');
+    }
   }
-  statusEl.textContent = result.message || 'Ошибка';
-  statusEl.style.color = 'var(--red-color)';
 }
 
 async function cancelEventRegistration(eventId) {
@@ -794,10 +1002,19 @@ document.getElementById('ticketChoiceModal')?.addEventListener('click', (event) 
   if (event.target.id === 'ticketChoiceModal') closeTicketChoiceModal();
 });
 document.getElementById('ticketChoiceConfirm')?.addEventListener('click', async () => {
+  const errorEl = document.getElementById('ticketChoiceError');
+  errorEl.textContent = '';
+  errorEl.classList.add('hidden');
+
   if (!pendingRegistrationEventId) return;
-  const selected = document.querySelector('input[name="ticketChoice"]:checked');
-  if (!selected) return;
-  await registerForEvent(pendingRegistrationEventId, selected.value);
+  const fallbackTitle = String(ticketChoiceItems.find((item) => String(item?.title || '').trim())?.title || '').trim();
+  const ticketTitle = selectedTicketTitle || fallbackTitle;
+  if (!ticketTitle) {
+    errorEl.textContent = 'Не удалось выбрать билет. Укажите название у билета.';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+  await registerForEvent(pendingRegistrationEventId, ticketTitle);
 });
 </script>
 {% endblock %}

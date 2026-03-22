@@ -36,5 +36,12 @@ class AttendanceAnswer(str, Enum):
     NO = "no"
 
 
+class PaymentStatus(str, Enum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
 def enum_values(enum_cls: type[Enum]) -> list[str]:
     return [member.value for member in enum_cls]

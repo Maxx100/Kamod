@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from app.services.mappers import (
     to_registered_event_list_item,
     to_registration_response,
 )
+from app.services.payment_service import PaymentService
 from app.services.telegram_service import TelegramService
 
 
@@ -48,7 +49,7 @@ class RegistrationService:
             if event is None:
                 raise NotFoundError("Event not found")
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self._ensure_registration_is_open(event.status, event.registration_start_at, event.registration_end_at, now)
 
             registration = self.registrations.get_for_update(event_id, current_user_id)
@@ -89,13 +90,18 @@ class RegistrationService:
             if event.status == EventStatus.COMPLETED:
                 raise ConflictError("Registrations cannot be cancelled for completed events")
 
+            now = datetime.now(UTC)
+            if now >= event.event_start_at - timedelta(hours=1):
+                raise ConflictError("Отмена регистрации недоступна менее чем за 1 час до начала мероприятия")
+
             registration = self.registrations.get_for_update(event_id, current_user_id)
             if registration is None or registration.status != RegistrationStatus.REGISTERED:
                 raise NotFoundError("Active registration not found")
 
             registration.status = RegistrationStatus.CANCELLED
-            registration.cancelled_at = datetime.now(timezone.utc)
+            registration.cancelled_at = now
             registration.checked_in_at = None
+            PaymentService(self.session).refund_for_cancelled_registration(event_id=event_id, user_id=current_user_id)
             self.telegram.sync_jobs_for_registration(event, registration)
 
     def check_in_participant(
@@ -119,7 +125,7 @@ class RegistrationService:
             if registration.checked_in_at is not None:
                 raise ConflictError("Ticket has already been scanned")
 
-            registration.checked_in_at = datetime.now(timezone.utc)
+            registration.checked_in_at = datetime.now(UTC)
 
         return to_registration_response(registration)
 

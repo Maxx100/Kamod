@@ -35,6 +35,25 @@
     <button type="submit" class="btn btn-primary" style="width:100%;">Сохранить</button>
   </form>
 </div>
+
+<div class="card" style="max-width:700px; margin: 0 auto 24px;">
+  <h3 style="margin-top:0; margin-bottom:14px;">Баланс</h3>
+  <div style="display:grid; gap:10px;">
+    <div style="display:flex; justify-content:space-between; gap:12px;">
+      <span style="color: var(--grey-color);">Доступно</span>
+      <strong id="balanceAvailable">0 ₽</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between; gap:12px;">
+      <span style="color: var(--grey-color);">В ожидании (до +24ч после мероприятия)</span>
+      <strong id="balancePending">0 ₽</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between; gap:12px;">
+      <span style="color: var(--grey-color);">Всего зачислено</span>
+      <strong id="balanceSettled">0 ₽</strong>
+    </div>
+  </div>
+  <p id="balanceError" class="hidden" style="margin-top:12px; color: var(--red-color);"></p>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -54,6 +73,11 @@ function getProfileInitials(fullName) {
 
 function composeFullName(lastName, firstName, middleName) {
   return [lastName, firstName, middleName].map((item) => (item || '').trim()).filter(Boolean).join(' ');
+}
+
+function formatRub(value) {
+  const amount = Number(value || 0);
+  return `${amount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`;
 }
 
 function setProfileAvatar(name, photoUrl = null) {
@@ -133,6 +157,31 @@ async function loadProfile() {
   document.getElementById('telegram').value = user.telegram || '';
 
   await syncProfileAvatar(user, token);
+  await loadOrganizerBalance(token);
+}
+
+async function loadOrganizerBalance(token) {
+  const errorEl = document.getElementById('balanceError');
+  errorEl.classList.add('hidden');
+  errorEl.textContent = '';
+
+  try {
+    const response = await fetch('/api/organizer/balance', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.message || 'Не удалось загрузить баланс');
+    }
+
+    document.getElementById('balanceAvailable').textContent = formatRub(payload.availableRub);
+    document.getElementById('balancePending').textContent = formatRub(payload.pendingRub);
+    document.getElementById('balanceSettled').textContent = formatRub(payload.settledTotalRub);
+  } catch (error) {
+    errorEl.textContent = error?.message || 'Не удалось загрузить баланс';
+    errorEl.classList.remove('hidden');
+  }
 }
 
 document.addEventListener('DOMContentLoaded', loadProfile);

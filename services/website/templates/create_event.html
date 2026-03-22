@@ -36,13 +36,12 @@
     <div class="form-group">
       <label for="isPaid" class="checkbox-label">Платное мероприятие <input type="checkbox" id="isPaid"></label>
     </div>
-    <div class="form-group hidden" id="priceGroup"><label for="price">Цена (₽)</label><input id="price" type="number" min="0"></div>
 
-    <div class="form-group">
+    <div class="form-group hidden" id="ticketsGroup">
       <label>Билеты</label>
       <div id="ticketItemsList" style="display:grid; gap:10px;"></div>
       <button id="addTicketItemBtn" type="button" class="btn btn-outline" style="margin-top:10px;">+ Добавить позицию</button>
-      <p style="margin-top:8px; color:var(--grey-color); font-size:14px;">Если добавить позиции, их цены будут использоваться для события (обратная совместимость со старым полем цены сохранена).</p>
+      <p style="margin-top:8px; color:var(--grey-color); font-size:14px;">Добавьте один или несколько билетов с ценой.</p>
     </div>
 
     <div id="formError" class="error hidden"></div>
@@ -69,6 +68,12 @@ function toggleCreateEventFormatFields() {
   if (isOnline) {
     addressInput.value = '';
   }
+}
+
+function toggleCreatePaidFields() {
+  const isPaid = document.getElementById('isPaid').checked;
+  const ticketsGroup = document.getElementById('ticketsGroup');
+  ticketsGroup.classList.toggle('hidden', !isPaid);
 }
 
 function renderCreateTicketItems() {
@@ -186,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.getElementById('eventFormat').addEventListener('change', toggleCreateEventFormatFields);
   document.getElementById('isPaid').addEventListener('change', (e) => {
-    document.getElementById('priceGroup').classList.toggle('hidden', !e.target.checked);
+    toggleCreatePaidFields();
   });
   document.getElementById('addTicketItemBtn').addEventListener('click', () => {
     createTicketItems.push({ title: '', description: '', price: 0 });
@@ -205,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   toggleCreateEventFormatFields();
+  toggleCreatePaidFields();
   renderCreateTicketItems();
 });
 
@@ -224,12 +230,20 @@ document.getElementById('createEventForm').addEventListener('submit', async (e) 
   }
 
   const formData = new FormData();
-  const ticketItems = normalizeCreateTicketItems();
-  const ticketValidationError = validateCreateTicketItems(ticketItems);
-  if (ticketValidationError) {
-    errorEl.textContent = ticketValidationError;
-    errorEl.classList.remove('hidden');
-    return;
+  const isPaid = document.getElementById('isPaid').checked;
+  const ticketItems = isPaid ? normalizeCreateTicketItems() : [];
+  if (isPaid) {
+    const ticketValidationError = validateCreateTicketItems(ticketItems);
+    if (ticketValidationError) {
+      errorEl.textContent = ticketValidationError;
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    if (!ticketItems.length) {
+      errorEl.textContent = 'Добавьте хотя бы один билет для платного мероприятия';
+      errorEl.classList.remove('hidden');
+      return;
+    }
   }
 
   formData.append('title', document.getElementById('title').value);
@@ -239,8 +253,8 @@ document.getElementById('createEventForm').addEventListener('submit', async (e) 
   formData.append('address', document.getElementById('address').value);
   formData.append('addressSelected', String(createAddressSelected));
   formData.append('description', document.getElementById('description').value);
-  formData.append('isPaid', String(document.getElementById('isPaid').checked));
-  formData.append('price', document.getElementById('isPaid').checked ? (document.getElementById('price').value || '0') : '0');
+  formData.append('isPaid', String(isPaid));
+  formData.append('price', '0');
   formData.append('ticketItems', JSON.stringify(ticketItems));
   if (file) formData.append('image', file);
 

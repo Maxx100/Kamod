@@ -9,18 +9,25 @@ from pathlib import Path
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
 import jwt
 import uvicorn
 from flask import Flask, redirect, render_template
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from starlette.middleware.wsgi import WSGIMiddleware
+
+try:
+    from yookassa import Configuration as YooKassaConfiguration
+    from yookassa import Payment as YooKassaPayment
+except Exception:
+    YooKassaConfiguration = None
+    YooKassaPayment = None
 
 
 DATABASE_API_URL = os.getenv("DATABASE_API_URL", "http://database:5000").rstrip("/")
@@ -38,6 +45,9 @@ MAX_EVENT_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_PROFILE_IMAGE_BYTES = 5 * 1024 * 1024
 YANDEX_MAPS_API_KEY = os.getenv("YANDEX_MAPS_API_KEY", "").strip()
 EVENT_META_PREFIX = "KAMOD_META_V1:"
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "").strip()
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "").strip()
+PAYMENT_WAIT_MINUTES = int(os.getenv("PAYMENT_WAIT_MINUTES", "10"))
 
 CATEGORY_TO_TAG = {
     "hackathon": "hackathon",
@@ -114,6 +124,15 @@ class TicketScanRequest(BaseModel):
 
 class EventRegisterRequest(BaseModel):
     ticketTitle: str | None = None
+
+
+class PaymentStatusResponse(BaseModel):
+    paymentId: str
+    eventId: str
+    status: str
+    registrationConfirmed: bool
+    shouldKeepWaiting: bool
+    expiresAt: str | None = None
 
 
 app = FastAPI(title="website-service", version="0.1.0")
@@ -656,6 +675,59 @@ def _ticket_price_minor(ticket_items: list[dict[str, Any]]) -> int:
         return 0
     min_price = min(max(int(item.get("price", 0)), 0) for item in ticket_items)
     return min_price * 100
+
+
+def _find_ticket_by_title(ticket_items: list[dict[str, Any]], title: str | None) -> dict[str, Any] | None:
+    normalized_title = (title or "").strip()
+    if not normalized_title:
+        return None
+    for ticket in ticket_items:
+        if str(ticket.get("title") or "").strip() == normalized_title:
+            return ticket
+    return None
+
+
+def _minor_to_rub(amount_minor: int) -> str:
+    return f"{max(int(amount_minor), 0) / 100:.2f}"
+
+
+def _extract_yookassa_fields(payment_obj: Any) -> tuple[str | None, str | None, str | None]:
+    provider_payment_id: str | None = None
+    confirmation_url: str | None = None
+    provider_status: str | None = None
+
+    if isinstance(payment_obj, dict):
+        provider_payment_id = str(payment_obj.get("id") or "").strip() or None
+        provider_status = str(payment_obj.get("status") or "").strip() or None
+        confirmation = payment_obj.get("confirmation") or {}
+        if isinstance(confirmation, dict):
+            confirmation_url = str(confirmation.get("confirmation_url") or "").strip() or None
+    else:
+        provider_payment_id = str(getattr(payment_obj, "id", "") or "").strip() or None
+        provider_status = str(getattr(payment_obj, "status", "") or "").strip() or None
+        confirmation = getattr(payment_obj, "confirmation", None)
+        confirmation_url = str(getattr(confirmation, "confirmation_url", "") or "").strip() or None
+
+    return provider_payment_id, confirmation_url, provider_status
+
+
+def _map_provider_status(provider_status: str | None) -> str:
+    normalized = (provider_status or "").strip().lower()
+    if normalized == "succeeded":
+        return "succeeded"
+    if normalized in {"canceled", "cancelled"}:
+        return "cancelled"
+    return "pending"
+
+
+def _configure_yookassa() -> None:
+    if YooKassaConfiguration is None or YooKassaPayment is None:
+        raise HTTPException(status_code=503, detail="YooKassa SDK is not installed")
+    if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="YooKassa credentials are not configured")
+
+    YooKassaConfiguration.account_id = YOOKASSA_SHOP_ID
+    YooKassaConfiguration.secret_key = YOOKASSA_SECRET_KEY
 
 
 def _build_front_event_payload(
@@ -1365,6 +1437,7 @@ async def get_event_image(event_id: str) -> Response:
 @app.post("/api/events/{event_id}/register")
 async def register_for_event(
     event_id: str,
+    request: Request,
     payload: EventRegisterRequest | None = None,
     user_id: str = Depends(_require_user_id),
 ) -> JSONResponse:
@@ -1375,18 +1448,216 @@ async def register_for_event(
     event_payload = _safe_json(event_response) or {}
     ticket_items, _ = _extract_event_meta(event_payload.get("recurrence_rule"))
     selected_ticket_title = (payload.ticketTitle.strip() if payload and payload.ticketTitle else "")
+    event_price_minor = max(int(event_payload.get("price_minor") or 0), 0)
 
     if ticket_items:
         if not selected_ticket_title:
             return JSONResponse(status_code=422, content={"message": "Выберите билет"})
-        allowed_titles = {str(item.get("title") or "").strip() for item in ticket_items}
-        if selected_ticket_title not in allowed_titles:
+        selected_ticket = _find_ticket_by_title(ticket_items, selected_ticket_title)
+        if selected_ticket is None:
             return JSONResponse(status_code=422, content={"message": "Выбранный билет не найден"})
+        amount_minor = max(int(selected_ticket.get("price") or 0), 0) * 100
+    else:
+        selected_ticket = None
+        amount_minor = event_price_minor
+
+    if amount_minor > 0:
+        try:
+            _configure_yookassa()
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"message": str(exc.detail)})
+
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(minutes=max(PAYMENT_WAIT_MINUTES, 1))
+        base_url = str(request.base_url).rstrip("/")
+        return_url = f"{base_url}/event?id={event_id}"
+        payment_description = f"Билет на «{event_payload.get('title') or 'мероприятие'}»"
+        if selected_ticket_title:
+            payment_description = f"{payment_description} ({selected_ticket_title})"
+
+        idempotence_key = str(uuid4())
+        try:
+            provider_payment = YooKassaPayment.create(
+                {
+                    "amount": {
+                        "value": _minor_to_rub(amount_minor),
+                        "currency": "RUB",
+                    },
+                    "capture": True,
+                    "description": payment_description,
+                    "confirmation": {
+                        "type": "redirect",
+                        "return_url": return_url,
+                    },
+                    "metadata": {
+                        "event_id": event_id,
+                        "user_id": user_id,
+                        "ticket_title": selected_ticket_title,
+                    },
+                },
+                idempotence_key,
+            )
+        except Exception:
+            logger.exception("YooKassa payment creation failed: event_id=%s user_id=%s", event_id, user_id)
+            return JSONResponse(status_code=502, content={"message": "Не удалось создать платеж"})
+
+        provider_payment_id, confirmation_url, provider_status = _extract_yookassa_fields(provider_payment)
+        if not provider_payment_id or not confirmation_url:
+            logger.error(
+                "YooKassa payment response missing required fields: event_id=%s user_id=%s payment_id=%s",
+                event_id,
+                user_id,
+                provider_payment_id,
+            )
+            return JSONResponse(status_code=502, content={"message": "Платежный сервис вернул некорректный ответ"})
+
+        create_payment_response = await _database_request(
+            "POST",
+            "/v1/payments",
+            user_id=user_id,
+            json_data={
+                "event_id": event_id,
+                "amount_minor": amount_minor,
+                "currency": "RUB",
+                "provider": "yookassa",
+                "provider_payment_id": provider_payment_id,
+                "ticket_title": selected_ticket_title or None,
+                "description": payment_description,
+                "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+            },
+        )
+        if create_payment_response.status_code >= 400:
+            logger.error(
+                "Failed to persist payment in DB: event_id=%s user_id=%s provider_payment_id=%s status=%s",
+                event_id,
+                user_id,
+                provider_payment_id,
+                create_payment_response.status_code,
+            )
+            return JSONResponse(
+                status_code=create_payment_response.status_code,
+                content=_normalize_error_from_response(create_payment_response, "Не удалось сохранить платеж"),
+            )
+
+        local_payment = _safe_json(create_payment_response) or {}
+        local_payment_id = str(local_payment.get("id") or "")
+        mapped_status = _map_provider_status(provider_status)
+        if mapped_status != "pending":
+            await _database_request(
+                "POST",
+                f"/v1/payments/{local_payment_id}/status",
+                user_id=user_id,
+                json_data={"status": mapped_status},
+            )
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "ok": False,
+                "requiresPayment": True,
+                "paymentId": local_payment_id,
+                "confirmationUrl": confirmation_url,
+                "expiresAt": local_payment.get("expires_at"),
+            },
+        )
 
     response = await _database_request("POST", f"/v1/events/{event_id}/registrations", user_id=user_id)
     if response.status_code >= 400:
         return JSONResponse(status_code=response.status_code, content=_normalize_error_from_response(response, "Failed to register for event"))
     return JSONResponse(status_code=response.status_code, content={"ok": True})
+
+
+@app.get("/api/payments/{payment_id}/status", response_model=PaymentStatusResponse)
+async def get_payment_status(payment_id: str, user_id: str = Depends(_require_user_id)) -> PaymentStatusResponse:
+    payment_response = await _database_request("GET", f"/v1/payments/{payment_id}", user_id=user_id)
+    if payment_response.status_code >= 400:
+        raise HTTPException(status_code=payment_response.status_code, detail="Payment not found")
+
+    payment_payload = _safe_json(payment_response) or {}
+    current_status = str(payment_payload.get("status") or "pending")
+    provider_payment_id = str(payment_payload.get("provider_payment_id") or "").strip()
+
+    if current_status == "pending":
+        provider_status = "pending"
+        if provider_payment_id:
+            try:
+                _configure_yookassa()
+                provider_payment = YooKassaPayment.find_one(provider_payment_id)
+                _, _, raw_status = _extract_yookassa_fields(provider_payment)
+                provider_status = _map_provider_status(raw_status)
+            except HTTPException:
+                provider_status = "pending"
+            except Exception:
+                logger.exception("YooKassa payment status check failed: payment_id=%s", payment_id)
+
+        expires_at = _parse_api_datetime(payment_payload.get("expires_at"))
+        if provider_status == "pending" and expires_at is not None and datetime.now(UTC) >= expires_at:
+            provider_status = "expired"
+
+        if provider_status != "pending":
+            update_response = await _database_request(
+                "POST",
+                f"/v1/payments/{payment_id}/status",
+                user_id=user_id,
+                json_data={"status": provider_status},
+            )
+            if update_response.status_code < 400:
+                payment_payload = _safe_json(update_response) or payment_payload
+                current_status = str(payment_payload.get("status") or current_status)
+
+    registration_confirmed = bool(payment_payload.get("registration_confirmed_at"))
+    if current_status == "succeeded" and not registration_confirmed:
+        event_id = str(payment_payload.get("event_id") or "")
+        registration_response = await _database_request("POST", f"/v1/events/{event_id}/registrations", user_id=user_id)
+        if registration_response.status_code < 400 or registration_response.status_code == 409:
+            confirm_response = await _database_request(
+                "POST",
+                f"/v1/payments/{payment_id}/confirm-registration",
+                user_id=user_id,
+            )
+            if confirm_response.status_code < 400:
+                payment_payload = _safe_json(confirm_response) or payment_payload
+                registration_confirmed = bool(payment_payload.get("registration_confirmed_at"))
+
+    refreshed_status = str(payment_payload.get("status") or current_status)
+    expires_at_value = payment_payload.get("expires_at")
+    should_keep_waiting = refreshed_status == "pending"
+    if should_keep_waiting:
+        expires_at = _parse_api_datetime(expires_at_value)
+        should_keep_waiting = expires_at is None or datetime.now(UTC) < expires_at
+
+    return PaymentStatusResponse(
+        paymentId=payment_id,
+        eventId=str(payment_payload.get("event_id") or ""),
+        status=refreshed_status,
+        registrationConfirmed=registration_confirmed,
+        shouldKeepWaiting=should_keep_waiting,
+        expiresAt=expires_at_value,
+    )
+
+
+@app.get("/api/organizer/balance")
+async def get_organizer_balance(user_id: str = Depends(_require_user_id)) -> JSONResponse:
+    await _database_request("POST", "/v1/payments/settlements/run")
+    response = await _database_request("GET", "/v1/payments/organizers/me/balance", user_id=user_id)
+    if response.status_code >= 400:
+        return JSONResponse(
+            status_code=response.status_code,
+            content=_normalize_error_from_response(response, "Не удалось получить баланс"),
+        )
+
+    payload = _safe_json(response) or {}
+    return JSONResponse(
+        status_code=200,
+        content={
+            "availableMinor": int(payload.get("available_minor") or 0),
+            "pendingMinor": int(payload.get("pending_minor") or 0),
+            "settledTotalMinor": int(payload.get("settled_total_minor") or 0),
+            "availableRub": int(payload.get("available_minor") or 0) / 100,
+            "pendingRub": int(payload.get("pending_minor") or 0) / 100,
+            "settledTotalRub": int(payload.get("settled_total_minor") or 0) / 100,
+        },
+    )
 
 
 @app.delete("/api/events/{event_id}/registration/{registration_id}")

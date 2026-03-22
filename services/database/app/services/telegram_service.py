@@ -206,12 +206,10 @@ class TelegramService:
     ) -> dict[TelegramJobKind, dict[str, object]]:
         now = datetime.now(timezone.utc)
         user = self.users.get_by_id(registration.user_id)
-        telegram_username = (user.telegram or "").strip() if user is not None and user.telegram else ""
-        has_username = bool(telegram_username)
         resolved_chat_id = (
             settings.telegram_chat_id
             if settings is not None and settings.telegram_chat_id is not None
-            else (1 if has_username else None)
+            else None
         )
 
         reminder_24h_enabled = True

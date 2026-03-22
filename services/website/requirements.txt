@@ -6,3 +6,4 @@ httpx
 PyJWT
 email-validator
 python-multipart
+yookassa

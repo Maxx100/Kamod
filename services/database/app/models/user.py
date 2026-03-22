@@ -25,6 +25,10 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         CheckConstraint("btrim(password_hash) <> ''", name="chk_users_password_hash_not_blank"),
         CheckConstraint("btrim(full_name) <> ''", name="chk_users_full_name_not_blank"),
         CheckConstraint(
+            "work_place IS NULL OR btrim(work_place) <> ''",
+            name="chk_users_work_place_not_blank",
+        ),
+        CheckConstraint(
             "telegram IS NULL OR telegram ~ '^@?[A-Za-z0-9_]{5,32}$'",
             name="chk_users_telegram_format",
         ),
@@ -63,6 +67,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     email: Mapped[str] = mapped_column(CITEXT(), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
+    work_place: Mapped[str | None] = mapped_column(Text, nullable=True)
     university: Mapped[str | None] = mapped_column(Text, nullable=True)
     faculty: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram: Mapped[str | None] = mapped_column(Text, nullable=True)

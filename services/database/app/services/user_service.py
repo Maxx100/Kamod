@@ -33,6 +33,7 @@ class UserService:
                     email=normalized_email,
                     password_hash=hash_password(payload.password),
                     full_name=payload.full_name,
+                    work_place=payload.work_place,
                     university=payload.university,
                     faculty=payload.faculty,
                     telegram=payload.telegram,
@@ -77,6 +78,8 @@ class UserService:
 
             if "full_name" in payload.model_fields_set:
                 user.full_name = payload.full_name
+            if "work_place" in payload.model_fields_set:
+                user.work_place = payload.work_place
             if "university" in payload.model_fields_set:
                 user.university = payload.university
             if "faculty" in payload.model_fields_set:
@@ -120,10 +123,9 @@ class UserService:
     def get_user_photo(
         self,
         user_id: UUID,
-        current_user_id: UUID,
+        current_user_id: UUID | None = None,
     ) -> tuple[str, bytes]:
-        if user_id != current_user_id:
-            raise ForbiddenError("You can only access your own profile")
+        _ = current_user_id
 
         user = self.users.get_by_id(user_id)
         if user is None:

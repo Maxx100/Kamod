@@ -6,7 +6,9 @@ from hashlib import sha256
 from pathlib import Path
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import httpx
 import jwt
@@ -15,7 +17,7 @@ from flask import Flask, redirect, render_template
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from starlette.middleware.wsgi import WSGIMiddleware
 
 
@@ -25,6 +27,7 @@ WEBSITE_PORT = int(os.getenv("WEBSITE_PORT", "80"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_COVERS_DIR = STATIC_DIR / "img"
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 JWT_SECRET = os.getenv("WEBSITE_JWT_SECRET", "change-me")
 JWT_ALGORITHM = os.getenv("WEBSITE_JWT_ALGORITHM", "HS256")
@@ -46,21 +49,33 @@ ALLOWED_COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 class RegisterRequest(BaseModel):
-    fullName: str = Field(min_length=1)
+    firstName: str | None = None
+    lastName: str | None = None
+    middleName: str | None = None
+    fullName: str | None = None
     email: EmailStr
     password: str = Field(min_length=8)
+    workPlace: str | None = None
     university: str | None = None
     faculty: str | None = None
     course: str | None = None
     telegram: str | None = None
 
-    @field_validator("university", "faculty", "course", "telegram", mode="before")
+    @field_validator("middleName", "workPlace", "university", "faculty", "course", "telegram", mode="before")
     @classmethod
     def blank_optional_fields_to_none(cls, value: Any) -> Any:
         if isinstance(value, str):
             stripped = value.strip()
             return stripped or None
         return value
+
+    @model_validator(mode="after")
+    def validate_name_fields(self) -> "RegisterRequest":
+        if self.fullName:
+            return self
+        if self.firstName and self.lastName:
+            return self
+        raise ValueError("Provide fullName or both firstName and lastName")
 
 
 class LoginRequest(BaseModel):
@@ -69,18 +84,26 @@ class LoginRequest(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
+    firstName: str | None = None
+    lastName: str | None = None
+    middleName: str | None = None
     fullName: str | None = None
+    workPlace: str | None = None
     university: str | None = None
     faculty: str | None = None
     telegram: str | None = None
 
-    @field_validator("university", "faculty", "telegram", mode="before")
+    @field_validator("firstName", "lastName", "middleName", "fullName", "workPlace", "university", "faculty", "telegram", mode="before")
     @classmethod
     def blank_profile_fields_to_none(cls, value: Any) -> Any:
         if isinstance(value, str):
             stripped = value.strip()
             return stripped or None
         return value
+
+
+class TicketScanRequest(BaseModel):
+    scanUrl: str = Field(min_length=1)
 
 
 app = FastAPI(title="website-service", version="0.1.0")
@@ -122,6 +145,11 @@ def frontend_profile():
 @frontend_app.route("/my-events")
 def frontend_my_events():
     return render_template("my_events.html", active_page="my-events", page_title="СТУДEVENTS — Мои мероприятия")
+
+
+@frontend_app.route("/ticket-scan")
+def frontend_ticket_scan():
+    return render_template("ticket_scan.html", active_page="", page_title="СТУДEVENTS — Проверка билета")
 
 
 @frontend_app.route("/login")
@@ -181,10 +209,15 @@ def frontend_register_html_redirect():
 
 def _to_front_user(user: dict[str, Any]) -> dict[str, Any]:
     has_photo = bool(user.get("has_photo"))
+    first_name, last_name, middle_name = _split_full_name(user.get("full_name"))
     return {
         "id": user["id"],
         "email": user["email"],
         "fullName": user["full_name"],
+        "firstName": first_name,
+        "lastName": last_name,
+        "middleName": middle_name,
+        "workPlace": user.get("work_place"),
         "university": user.get("university"),
         "faculty": user.get("faculty"),
         "telegram": user.get("telegram"),
@@ -216,6 +249,42 @@ def _normalize_error_from_response(response: httpx.Response, fallback: str) -> d
     if text_payload:
         return {"message": text_payload}
     return {"message": fallback}
+
+
+def _extract_scan_ids(scan_url: str) -> tuple[str, str]:
+    parsed = urlparse(scan_url)
+    query = parse_qs(parsed.query or "")
+
+    event_id = (query.get("eventId") or query.get("event_id") or [""])[0]
+    participant_user_id = (query.get("userId") or query.get("user_id") or [""])[0]
+
+    if not event_id or not participant_user_id:
+        raise ValueError("Некорректный билет: отсутствует eventId или userId")
+
+    try:
+        UUID(event_id)
+        UUID(participant_user_id)
+    except ValueError as exc:
+        raise ValueError("Некорректный билет: неверный формат идентификаторов") from exc
+
+    return event_id, participant_user_id
+
+
+async def _find_event_participant(event_id: str, participant_user_id: str, user_id: str) -> dict[str, Any] | None:
+    participants_response = await _database_request(
+        "GET",
+        f"/v1/events/{event_id}/participants",
+        params={"limit": 100, "offset": 0, "status": "registered"},
+        user_id=user_id,
+    )
+    if participants_response.status_code >= 400:
+        return None
+
+    items = (_safe_json(participants_response) or {}).get("items", [])
+    for item in items:
+        if str(item.get("user_id")) == str(participant_user_id):
+            return item
+    return None
 
 
 def _issue_token(user_id: str) -> str:
@@ -267,10 +336,38 @@ def _parse_event_datetime(raw_value: str) -> datetime:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid eventDate") from exc
 
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+        parsed = parsed.replace(tzinfo=MOSCOW_TZ)
     else:
-        parsed = parsed.astimezone(UTC)
-    return parsed
+        parsed = parsed.astimezone(MOSCOW_TZ)
+    return parsed.astimezone(UTC)
+
+
+def _split_full_name(full_name: str | None) -> tuple[str, str, str | None]:
+    normalized = (full_name or "").strip()
+    if not normalized:
+        return "", "", None
+
+    parts = [part for part in normalized.split() if part]
+    if not parts:
+        return "", "", None
+    if len(parts) == 1:
+        return parts[0], "", None
+    if len(parts) == 2:
+        return parts[1], parts[0], None
+
+    first_name = parts[1]
+    last_name = parts[0]
+    middle_name = " ".join(parts[2:])
+    return first_name, last_name, middle_name
+
+
+def _compose_full_name(first_name: str | None, last_name: str | None, middle_name: str | None) -> str:
+    first = (first_name or "").strip()
+    last = (last_name or "").strip()
+    middle = (middle_name or "").strip()
+    if not first or not last:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="firstName and lastName are required")
+    return " ".join(part for part in [last, first, middle] if part)
 
 
 def _normalize_event_format(raw_value: str) -> str:
@@ -411,8 +508,11 @@ def _map_event_from_db(event: dict[str, Any]) -> dict[str, Any]:
         "organizer": {
             "id": creator.get("id"),
             "fullName": creator.get("full_name") or "Организатор",
-            "university": creator.get("university") or "—",
+            "workPlace": creator.get("work_place"),
+            "university": creator.get("university"),
+            "displayPlace": creator.get("work_place") or creator.get("university"),
             "telegram": creator.get("telegram"),
+            "hasPhoto": bool(creator.get("has_photo")),
         },
     }
 
@@ -539,10 +639,12 @@ async def default_covers() -> dict[str, list[str]]:
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest) -> JSONResponse:
+    full_name = payload.fullName or _compose_full_name(payload.firstName, payload.lastName, payload.middleName)
     db_payload = {
         "email": payload.email,
         "password": payload.password,
-        "full_name": payload.fullName,
+        "full_name": full_name,
+        "work_place": payload.workPlace,
         "university": payload.university,
         "faculty": payload.faculty,
         "telegram": payload.telegram,
@@ -583,13 +685,32 @@ async def auth_me(user_id: str = Depends(_require_user_id)) -> JSONResponse:
 @app.patch("/api/users/me")
 async def update_my_profile(payload: UpdateProfileRequest, user_id: str = Depends(_require_user_id)) -> JSONResponse:
     db_payload: dict[str, Any] = {}
+
     if payload.fullName is not None:
         db_payload["full_name"] = payload.fullName
-    if payload.university is not None:
+    elif payload.firstName is not None or payload.lastName is not None or payload.middleName is not None:
+        current_user_response = await _database_request("GET", f"/v1/users/{user_id}", user_id=user_id)
+        if current_user_response.status_code >= 400:
+            return JSONResponse(
+                status_code=current_user_response.status_code,
+                content=_normalize_error_from_response(current_user_response, "Failed to get current profile"),
+            )
+        current_user = _safe_json(current_user_response) or {}
+        current_first, current_last, current_middle = _split_full_name(current_user.get("full_name"))
+        full_name = _compose_full_name(
+            payload.firstName if payload.firstName is not None else current_first,
+            payload.lastName if payload.lastName is not None else current_last,
+            payload.middleName if payload.middleName is not None else current_middle,
+        )
+        db_payload["full_name"] = full_name
+
+    if "workPlace" in payload.model_fields_set:
+        db_payload["work_place"] = payload.workPlace
+    if "university" in payload.model_fields_set:
         db_payload["university"] = payload.university
-    if payload.faculty is not None:
+    if "faculty" in payload.model_fields_set:
         db_payload["faculty"] = payload.faculty
-    if payload.telegram is not None:
+    if "telegram" in payload.model_fields_set:
         db_payload["telegram"] = payload.telegram
 
     if not db_payload:
@@ -665,6 +786,21 @@ async def get_my_profile_photo(user_id: str = Depends(_require_user_id)) -> Resp
     )
 
 
+@app.get("/api/users/{target_user_id}/photo", response_model=None)
+async def get_user_photo(target_user_id: str) -> Response:
+    response = await _database_request("GET", f"/v1/users/{target_user_id}/photo")
+    if response.status_code >= 400:
+        return JSONResponse(
+            status_code=response.status_code,
+            content=_normalize_error_from_response(response, "Фото пользователя не найдено"),
+        )
+
+    return Response(
+        content=response.content,
+        media_type=response.headers.get("content-type") or "application/octet-stream",
+    )
+
+
 @app.get("/api/events")
 async def list_events(
     date: str | None = Query(default=None),
@@ -691,8 +827,8 @@ async def list_events(
             day = datetime.fromisoformat(date).date()
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid date filter") from exc
-        starts_from_dt = datetime.combine(day, time.min, tzinfo=UTC)
-        starts_to_dt = datetime.combine(day, time.max, tzinfo=UTC)
+        starts_from_dt = datetime.combine(day, time.min, tzinfo=MOSCOW_TZ).astimezone(UTC)
+        starts_to_dt = datetime.combine(day, time.max, tzinfo=MOSCOW_TZ).astimezone(UTC)
         params["starts_from"] = starts_from_dt.isoformat().replace("+00:00", "Z")
         params["starts_to"] = starts_to_dt.isoformat().replace("+00:00", "Z")
     else:
@@ -701,14 +837,14 @@ async def list_events(
                 from_day = datetime.fromisoformat(date_from).date()
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid dateFrom filter") from exc
-            starts_from_dt = datetime.combine(from_day, time.min, tzinfo=UTC)
+            starts_from_dt = datetime.combine(from_day, time.min, tzinfo=MOSCOW_TZ).astimezone(UTC)
             params["starts_from"] = starts_from_dt.isoformat().replace("+00:00", "Z")
         if date_to:
             try:
                 to_day = datetime.fromisoformat(date_to).date()
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid dateTo filter") from exc
-            starts_to_dt = datetime.combine(to_day, time.max, tzinfo=UTC)
+            starts_to_dt = datetime.combine(to_day, time.max, tzinfo=MOSCOW_TZ).astimezone(UTC)
             params["starts_to"] = starts_to_dt.isoformat().replace("+00:00", "Z")
 
     response = await _database_request("GET", "/v1/events", params=params)
@@ -934,6 +1070,19 @@ async def update_event(
     )
 
 
+@app.post("/api/events/{event_id}/cancel")
+async def cancel_event(event_id: str, user_id: str = Depends(_require_user_id)) -> JSONResponse:
+    response = await _database_request("POST", f"/v1/events/{event_id}/cancel", user_id=user_id)
+    if response.status_code >= 400:
+        return JSONResponse(
+            status_code=response.status_code,
+            content=_normalize_error_from_response(response, "Не удалось отменить мероприятие"),
+        )
+
+    payload = _safe_json(response) or {}
+    return JSONResponse(status_code=200, content=_map_event_from_db(payload))
+
+
 @app.get("/api/events/{event_id}/image")
 async def get_event_image(event_id: str) -> Response:
     response = await _database_request("GET", f"/v1/events/{event_id}/photo")
@@ -973,16 +1122,110 @@ async def get_participants(event_id: str, user_id: str = Depends(_require_user_i
         return JSONResponse(status_code=response.status_code, content=_normalize_error_from_response(response, "Failed to load participants"))
 
     items = (_safe_json(response) or {}).get("items", [])
+
     normalized = [
         {
             "userId": item.get("user_id"),
             "fullName": item.get("full_name") or "—",
-            "university": "—",
+            "university": item.get("university"),
+            "workPlace": item.get("work_place"),
             "telegram": item.get("telegram"),
+            "checkedIn": bool(item.get("checked_in_at")),
+            "checkedInAt": item.get("checked_in_at"),
         }
         for item in items
     ]
     return JSONResponse(status_code=200, content=normalized)
+
+
+@app.post("/api/events/{event_id}/participants/{participant_user_id}/check-in")
+async def check_in_participant(
+    event_id: str,
+    participant_user_id: str,
+    user_id: str = Depends(_require_user_id),
+) -> JSONResponse:
+    response = await _database_request(
+        "POST",
+        f"/v1/events/{event_id}/participants/{participant_user_id}/check-in",
+        user_id=user_id,
+    )
+    if response.status_code >= 400:
+        return JSONResponse(
+            status_code=response.status_code,
+            content=_normalize_error_from_response(response, "Не удалось отметить участника"),
+        )
+
+    participant_payload = await _find_event_participant(event_id, participant_user_id, user_id)
+    if participant_payload is None:
+        return JSONResponse(status_code=404, content={"message": "Участник не найден"})
+
+    check_in_payload = _safe_json(response) or {}
+    return JSONResponse(
+        status_code=200,
+        content={
+            "eventId": event_id,
+            "userId": participant_user_id,
+            "fullName": participant_payload.get("full_name") or "—",
+            "telegram": participant_payload.get("telegram"),
+            "university": participant_payload.get("university"),
+            "workPlace": participant_payload.get("work_place"),
+            "checkedInAt": check_in_payload.get("checked_in_at"),
+        },
+    )
+
+
+@app.post("/api/tickets/scan-link")
+async def scan_ticket_link(payload: TicketScanRequest, user_id: str = Depends(_require_user_id)) -> JSONResponse:
+    try:
+        event_id, participant_user_id = _extract_scan_ids(payload.scanUrl)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"message": str(exc)})
+
+    event_response = await _database_request("GET", f"/v1/events/{event_id}", user_id=user_id)
+    if event_response.status_code >= 400:
+        return JSONResponse(
+            status_code=event_response.status_code,
+            content=_normalize_error_from_response(event_response, "Мероприятие не найдено"),
+        )
+
+    event_payload = _safe_json(event_response) or {}
+    if str(event_payload.get("created_by_user_id")) != str(user_id):
+        return JSONResponse(status_code=403, content={"message": "Только организатор может сканировать билеты"})
+
+    check_response = await _database_request(
+        "POST",
+        f"/v1/events/{event_id}/participants/{participant_user_id}/check-in",
+        user_id=user_id,
+    )
+    if check_response.status_code >= 400:
+        return JSONResponse(
+            status_code=check_response.status_code,
+            content=_normalize_error_from_response(check_response, "Не удалось проверить билет"),
+        )
+
+    participant_payload = await _find_event_participant(event_id, participant_user_id, user_id)
+    if participant_payload is None:
+        return JSONResponse(status_code=404, content={"message": "Участник не найден"})
+
+    check_payload = _safe_json(check_response) or {}
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "event": {
+                "id": event_id,
+                "title": event_payload.get("title"),
+            },
+            "participant": {
+                "id": participant_user_id,
+                "fullName": participant_payload.get("full_name") or "—",
+                "telegram": participant_payload.get("telegram"),
+                "university": participant_payload.get("university"),
+                "workPlace": participant_payload.get("work_place"),
+                "checkedInAt": check_payload.get("checked_in_at"),
+            },
+        },
+    )
 
 
 @app.get("/api/users/{user_id}/registrations")

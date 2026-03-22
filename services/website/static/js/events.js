@@ -281,7 +281,7 @@ function resetFilters() {
 
 function formatDate(dateString) {
   return new Date(dateString).toLocaleString('ru-RU', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow'
   });
 }
 

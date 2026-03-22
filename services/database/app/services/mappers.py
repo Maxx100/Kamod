@@ -93,8 +93,11 @@ def to_participant_response(registration: EventRegistration) -> ParticipantRespo
         user_id=registration.user_id,
         full_name=registration.user.full_name,
         telegram=registration.user.telegram,
+        university=registration.user.university,
+        work_place=registration.user.work_place,
         status=registration.status,
         registered_at=registration.registered_at,
+        checked_in_at=registration.checked_in_at,
     )
 
 

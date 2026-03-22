@@ -29,6 +29,12 @@ class EventRegistration(Base, TimestampMixin):
             """,
             name="chk_event_registrations_status_timestamps",
         ),
+        CheckConstraint(
+            """
+            checked_in_at IS NULL OR status = 'registered'
+            """,
+            name="chk_event_registrations_checked_in_requires_registered",
+        ),
         Index(
             "idx_event_registrations_event_active",
             "event_id",
@@ -40,6 +46,12 @@ class EventRegistration(Base, TimestampMixin):
             "user_id",
             "created_at",
             postgresql_where=text("status = 'registered'"),
+        ),
+        Index(
+            "idx_event_registrations_event_checked_in",
+            "event_id",
+            "checked_in_at",
+            postgresql_where=text("checked_in_at IS NOT NULL"),
         ),
     )
 
@@ -71,6 +83,10 @@ class EventRegistration(Base, TimestampMixin):
         server_default=text("NOW()"),
     )
     cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    checked_in_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

@@ -6,6 +6,8 @@
   <title>{{ page_title }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="/img/favicon/favicon.svg">
+  <link rel="shortcut icon" href="/img/favicon/favicon.svg">
   <link rel="stylesheet" href="/css/app.css?v=20260322-1">
   {% block head %}{% endblock %}
 </head>
@@ -13,6 +15,7 @@
   <header class="header">
     <a href="/main" class="logo"><span>🎓</span> СТУД<span class="logo-events">EVENTS</span></a>
     <ul class="nav-links">
+      <li><a href="/main" class="{{ 'active' if active_page == 'events' else '' }}">Главная</a></li>
       <li><a href="/my-events" id="myEventsNavLink" class="{{ 'active' if active_page == 'my-events' else '' }} hidden">Мои мероприятия</a></li>
       <li><a href="/tickets" class="{{ 'active' if active_page == 'tickets' else '' }}">Билеты</a></li>
       <li><a href="/profile" id="profileNavLink" class="{{ 'active' if active_page == 'profile' else '' }} hidden">Профиль</a></li>

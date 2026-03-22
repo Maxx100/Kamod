@@ -133,3 +133,13 @@ def get_participants(
     params: Annotated[ParticipantQueryParams, Depends()],
 ) -> ParticipantListResponse:
     return service.list_participants(event_id, current_user_id, params)
+
+
+@router.post("/{event_id}/participants/{participant_user_id}/check-in", response_model=RegistrationResponse)
+def check_in_participant(
+    event_id: UUID,
+    participant_user_id: UUID,
+    current_user_id: CurrentUserId,
+    service: RegistrationServiceDep,
+) -> RegistrationResponse:
+    return service.check_in_participant(event_id, participant_user_id, current_user_id)

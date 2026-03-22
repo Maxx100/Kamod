@@ -10,13 +10,36 @@
 </div>
 <div class="events-grid" id="ticketsGrid"></div>
 <div id="emptyState" class="card hidden" style="text-align:center;">У вас пока нет билетов</div>
+
+<div id="ticketModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width: 460px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <h3 style="font-size:22px;">Ваш билет</h3>
+      <button id="ticketModalClose" class="btn btn-outline">Закрыть</button>
+    </div>
+    <p id="ticketModalTitle" style="color:var(--black-600);"></p>
+    <div id="ticketQr" style="display:flex;justify-content:center;padding:8px 0;"></div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label for="ticketLinkInput">Ссылка билета</label>
+      <div style="display:flex; gap:8px;">
+        <input id="ticketLinkInput" type="text" readonly>
+        <button id="ticketCopyBtn" type="button" class="btn btn-outline">Копировать</button>
+      </div>
+    </div>
+    <p style="font-size:14px;color:var(--black-300);text-align:center;">Покажите этот QR-код организатору на входе</p>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
+let currentTicketUser = null;
+
 document.addEventListener('DOMContentLoaded', () => {
   const user = JSON.parse(localStorage.getItem('user'));
   if (!user) { window.location.href = '/login'; return; }
+  currentTicketUser = user;
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
@@ -41,6 +64,13 @@ function getDefaultCoverById(eventId) {
 
 function resolveEventCover(event) {
   return event.coverUrl || getDefaultCoverById(event.id);
+}
+
+function formatMoscowDateTime(value) {
+  return new Date(value).toLocaleString('ru-RU', {
+    day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Moscow'
+  });
 }
 
 async function loadTickets(filter = 'all') {
@@ -76,15 +106,63 @@ async function loadTickets(filter = 'all') {
         <a href="/event?id=${event.id}">
           <div class="event-image-wrapper"><img class="event-image" src="${coverUrl}" alt="${event.title}" onerror="this.onerror=null;this.src='${getDefaultCoverById(event.id)}'"></div>
           <div class="event-name">${event.title}</div>
-          <div class="event-info"><span>${new Date(event.eventDate).toLocaleString('ru-RU')}</span></div>
+          <div class="event-info"><span>${formatMoscowDateTime(event.eventDate)}</span></div>
         </a>
         <div style="padding: 0 16px 16px; display:flex; gap:8px;">
           <a class="btn btn-primary" href="/event?id=${event.id}">Подробнее</a>
+          <button class="btn btn-outline" onclick="openTicketModal('${event.id}','${event.title.replace(/'/g, "&#039;")}')">Билет</button>
           ${!isPast ? `<button class="btn btn-danger" onclick="cancelRegistration('${reg.id}','${event.id}')">Отмена</button>` : ''}
         </div>
       </article>
     `;
   }).join('');
+}
+
+function openTicketModal(eventId, eventTitle) {
+  if (!currentTicketUser?.id) {
+    window.location.href = '/login';
+    return;
+  }
+
+  const scanUrl = `${window.location.origin}/ticket-scan?eventId=${encodeURIComponent(eventId)}&userId=${encodeURIComponent(currentTicketUser.id)}`;
+  const qrRoot = document.getElementById('ticketQr');
+  qrRoot.innerHTML = '';
+  document.getElementById('ticketLinkInput').value = scanUrl;
+  const copyBtn = document.getElementById('ticketCopyBtn');
+  copyBtn.textContent = 'Копировать';
+  document.getElementById('ticketModalTitle').textContent = eventTitle || 'Мероприятие';
+  new QRCode(qrRoot, {
+    text: scanUrl,
+    width: 260,
+    height: 260,
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+  document.getElementById('ticketModal').classList.remove('hidden');
+}
+
+async function copyTicketLink() {
+  const linkInput = document.getElementById('ticketLinkInput');
+  const copyBtn = document.getElementById('ticketCopyBtn');
+  const link = linkInput.value;
+  if (!link) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(link);
+    } else {
+      linkInput.focus();
+      linkInput.select();
+      document.execCommand('copy');
+    }
+    copyBtn.textContent = 'Скопировано';
+  } catch {
+    copyBtn.textContent = 'Не удалось';
+  }
+}
+
+function closeTicketModal() {
+  document.getElementById('ticketModal').classList.add('hidden');
+  document.getElementById('ticketQr').innerHTML = '';
 }
 
 async function cancelRegistration(registrationId, eventId) {
@@ -103,5 +181,11 @@ async function cancelRegistration(registrationId, eventId) {
 
   window.alert('Не удалось отменить регистрацию');
 }
+
+document.getElementById('ticketModalClose')?.addEventListener('click', closeTicketModal);
+document.getElementById('ticketCopyBtn')?.addEventListener('click', copyTicketLink);
+document.getElementById('ticketModal')?.addEventListener('click', (event) => {
+  if (event.target.id === 'ticketModal') closeTicketModal();
+});
 </script>
 {% endblock %}

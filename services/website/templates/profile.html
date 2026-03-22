@@ -15,14 +15,14 @@
           <label for="profilePhoto" class="btn btn-outline">Загрузить фото</label>
           <span id="profilePhotoName" class="profile-photo-name">Файл не выбран</span>
         </div>
-        <div style="margin-top:12px;">
-          <a href="/my-events" class="btn btn-primary">Мои мероприятия</a>
-        </div>
         <input id="profilePhoto" type="file" accept="image/*" class="hidden">
       </div>
     </div>
-    <div class="form-group"><label for="fullName">ФИО *</label><input id="fullName" required></div>
+    <div class="form-group"><label for="lastName">Фамилия *</label><input id="lastName" required></div>
+    <div class="form-group"><label for="firstName">Имя *</label><input id="firstName" required></div>
+    <div class="form-group"><label for="middleName">Отчество</label><input id="middleName"></div>
     <div class="form-group"><label for="email">Email</label><input id="email" disabled></div>
+    <div class="form-group"><label for="workPlace">Место работы</label><input id="workPlace"></div>
     <div class="form-group"><label for="university">ВУЗ</label><input id="university"></div>
     <div class="form-group"><label for="faculty">Факультет</label><input id="faculty"></div>
     <div class="form-group"><label for="telegram">Telegram</label><input id="telegram" placeholder="@username"></div>
@@ -46,6 +46,10 @@ function getProfileInitials(fullName) {
     .filter(Boolean)
     .slice(0, 2)
     .join('');
+}
+
+function composeFullName(lastName, firstName, middleName) {
+  return [lastName, firstName, middleName].map((item) => (item || '').trim()).filter(Boolean).join(' ');
 }
 
 function setProfileAvatar(name, photoUrl = null) {
@@ -115,8 +119,11 @@ async function loadProfile() {
   const user = await response.json();
   localStorage.setItem('user', JSON.stringify(user));
   document.getElementById('profileDisplayName').textContent = user.fullName || 'Профиль';
-  document.getElementById('fullName').value = user.fullName || '';
+  document.getElementById('firstName').value = user.firstName || '';
+  document.getElementById('lastName').value = user.lastName || '';
+  document.getElementById('middleName').value = user.middleName || '';
   document.getElementById('email').value = user.email || '';
+  document.getElementById('workPlace').value = user.workPlace || '';
   document.getElementById('university').value = user.university || '';
   document.getElementById('faculty').value = user.faculty || '';
   document.getElementById('telegram').value = user.telegram || '';
@@ -129,7 +136,11 @@ document.getElementById('profilePhoto').addEventListener('change', async (e) => 
   const [file] = e.target.files || [];
   selectedProfilePhoto = file || null;
   const nameEl = document.getElementById('profilePhotoName');
-  const currentName = document.getElementById('fullName').value || document.getElementById('profileDisplayName').textContent || '';
+  const currentName = composeFullName(
+    document.getElementById('lastName').value,
+    document.getElementById('firstName').value,
+    document.getElementById('middleName').value,
+  ) || document.getElementById('profileDisplayName').textContent || '';
 
   if (!selectedProfilePhoto) {
     nameEl.textContent = 'Файл не выбран';
@@ -160,7 +171,15 @@ document.getElementById('profileForm').addEventListener('submit', async (e) => {
   successEl.classList.add('hidden');
 
   const payload = {
-    fullName: document.getElementById('fullName').value,
+    firstName: document.getElementById('firstName').value,
+    lastName: document.getElementById('lastName').value,
+    middleName: document.getElementById('middleName').value,
+    fullName: composeFullName(
+      document.getElementById('lastName').value,
+      document.getElementById('firstName').value,
+      document.getElementById('middleName').value,
+    ),
+    workPlace: document.getElementById('workPlace').value,
     university: document.getElementById('university').value,
     faculty: document.getElementById('faculty').value,
     telegram: document.getElementById('telegram').value,

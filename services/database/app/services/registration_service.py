@@ -66,6 +66,7 @@ class RegistrationService:
                     status=RegistrationStatus.REGISTERED,
                     registered_at=now,
                     cancelled_at=None,
+                    checked_in_at=None,
                 )
                 self.registrations.add(registration)
                 created = True
@@ -73,6 +74,7 @@ class RegistrationService:
                 registration.status = RegistrationStatus.REGISTERED
                 registration.registered_at = now
                 registration.cancelled_at = None
+                registration.checked_in_at = None
 
             self.telegram.sync_jobs_for_registration(event, registration)
             self.session.flush()
@@ -93,7 +95,33 @@ class RegistrationService:
 
             registration.status = RegistrationStatus.CANCELLED
             registration.cancelled_at = datetime.now(timezone.utc)
+            registration.checked_in_at = None
             self.telegram.sync_jobs_for_registration(event, registration)
+
+    def check_in_participant(
+        self,
+        event_id: UUID,
+        participant_user_id: UUID,
+        current_user_id: UUID,
+    ) -> RegistrationResponse:
+        with self.session.begin():
+            event = self.events.get_for_update(event_id)
+            if event is None:
+                raise NotFoundError("Event not found")
+            if event.created_by_user_id != current_user_id:
+                raise ForbiddenError("Only the event creator can check in participants")
+
+            registration = self.registrations.get_for_update(event_id, participant_user_id)
+            if registration is None:
+                raise NotFoundError("Registration not found")
+            if registration.status != RegistrationStatus.REGISTERED:
+                raise ConflictError("Registration is not active")
+            if registration.checked_in_at is not None:
+                raise ConflictError("Ticket has already been scanned")
+
+            registration.checked_in_at = datetime.now(timezone.utc)
+
+        return to_registration_response(registration)
 
     def list_participants(
         self,

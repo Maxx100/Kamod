@@ -54,10 +54,9 @@ async def upload_user_photo(
 @router.get("/{user_id}/photo")
 def get_user_photo(
     user_id: UUID,
-    current_user_id: CurrentUserId,
     service: UserServiceDep,
 ) -> Response:
-    content_type, photo_data = service.get_user_photo(user_id, current_user_id)
+    content_type, photo_data = service.get_user_photo(user_id)
     return Response(content=photo_data, media_type=content_type)
 
 

@@ -66,7 +66,7 @@ async function updateAuthUI() {
   
   if (user) {
     const initials = getUserInitials(user.fullName);
-    const displayName = user.fullName || 'Пользователь';
+    const displayName = user.firstName || (user.fullName || 'Пользователь').split(' ')[0];
 
     authButtons.innerHTML = `
       <a href="/profile" class="auth-user-chip auth-user-link" aria-label="Перейти в профиль">

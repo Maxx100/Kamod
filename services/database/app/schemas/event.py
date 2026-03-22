@@ -157,6 +157,7 @@ class RegistrationResponse(TimestampedResponse):
     status: RegistrationStatus
     registered_at: AwareDatetime
     cancelled_at: AwareDatetime | None = None
+    checked_in_at: AwareDatetime | None = None
 
 
 class ParticipantQueryParams(APIModel):
@@ -169,8 +170,11 @@ class ParticipantResponse(APIModel):
     user_id: UUID
     full_name: str
     telegram: str | None = None
+    university: str | None = None
+    work_place: str | None = None
     status: RegistrationStatus
     registered_at: AwareDatetime
+    checked_in_at: AwareDatetime | None = None
 
 
 class ParticipantListResponse(OffsetPagination):

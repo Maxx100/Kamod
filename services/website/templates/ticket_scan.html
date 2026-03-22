@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="page-title">Проверка билета</h1>
+<p class="page-subtitle" id="scanSubtitle">Проверяем билет по QR-ссылке</p>
+
+<div id="scanResultCard" class="card hidden">
+  <h3 style="font-size:22px; margin-bottom:12px;">Билет подтверждён</h3>
+  <div id="scanResultBody" style="display:grid; gap:8px; color: var(--black-600);"></div>
+</div>
+
+<div id="scanErrorCard" class="card hidden" style="border:1px solid rgba(210,52,45,0.25);">
+  <h3 style="font-size:22px; margin-bottom:12px; color: var(--red-color);">Ошибка проверки</h3>
+  <p id="scanErrorText"></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function showError(message) {
+  document.getElementById('scanResultCard').classList.add('hidden');
+  document.getElementById('scanErrorCard').classList.remove('hidden');
+  document.getElementById('scanErrorText').textContent = message || 'Не удалось проверить билет';
+}
+
+async function checkTicketByCurrentUrl() {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login?next=${next}`;
+    return;
+  }
+
+  const response = await fetch('/api/tickets/scan-link', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ scanUrl: window.location.href })
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    showError(payload?.message || 'Не удалось проверить билет');
+    return;
+  }
+
+  const participant = payload?.participant || {};
+  const event = payload?.event || {};
+  const resultBody = document.getElementById('scanResultBody');
+  resultBody.innerHTML = `
+    <div><strong>Мероприятие:</strong> ${escapeHtml(event.title || '—')}</div>
+    <div><strong>ФИО:</strong> ${escapeHtml(participant.fullName || '—')}</div>
+    <div><strong>Telegram:</strong> ${escapeHtml(participant.telegram || '—')}</div>
+    <div><strong>ВУЗ:</strong> ${escapeHtml(participant.university || '—')}</div>
+    <div><strong>Место работы:</strong> ${escapeHtml(participant.workPlace || '—')}</div>
+  `;
+  document.getElementById('scanErrorCard').classList.add('hidden');
+  document.getElementById('scanResultCard').classList.remove('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', checkTicketByCurrentUrl);
+</script>
+{% endblock %}

@@ -9,6 +9,7 @@ class UserRegisterRequest(APIModel):
     email: EmailStr
     password: str
     full_name: NonEmptyStr
+    work_place: NonEmptyStr | None = None
     university: NonEmptyStr | None = None
     faculty: NonEmptyStr | None = None
     telegram: TelegramStr | None = None
@@ -40,6 +41,7 @@ class UserLoginRequest(APIModel):
 class UserSummary(APIModel):
     id: UUID
     full_name: str
+    work_place: str | None = None
     university: str | None = None
     faculty: str | None = None
     telegram: str | None = None
@@ -48,6 +50,7 @@ class UserSummary(APIModel):
 
 class UserUpdateRequest(APIModel):
     full_name: NonEmptyStr | None = None
+    work_place: NonEmptyStr | None = None
     university: NonEmptyStr | None = None
     faculty: NonEmptyStr | None = None
     telegram: TelegramStr | None = None
@@ -63,6 +66,7 @@ class UserResponse(TimestampedResponse):
     id: UUID
     email: EmailStr
     full_name: str
+    work_place: str | None = None
     university: str | None = None
     faculty: str | None = None
     telegram: str | None = None

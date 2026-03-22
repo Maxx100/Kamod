@@ -9,6 +9,127 @@
 .event-header-content h1 { margin: 0 0 10px; }
 .event-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px; }
 .event-meta { display: grid; gap: 10px; margin-top: 16px; color: var(--black-600); }
+.event-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.event-pill-date {
+  background: rgba(131, 115, 179, 0.16);
+  color: #5f4c8f;
+}
+.event-pill-address {
+  background: rgba(11, 104, 254, 0.14);
+  color: #0b4ec4;
+}
+.organizer-block {
+  margin-top: 10px;
+  color: var(--black-600);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.organizer-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--primary-color), var(--blue-tag-color));
+  color: var(--white-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.organizer-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.participants-section {
+  margin-top: 24px;
+}
+.participants-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 12px;
+}
+.participants-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+.participants-table th,
+.participants-table td {
+  border-bottom: 1px solid var(--light-grey-color);
+  padding: 10px 0;
+  text-align: left;
+  vertical-align: top;
+}
+.participants-table th {
+  color: var(--black-600);
+  font-weight: 600;
+}
+.registration-card {
+  display: flex;
+  flex-direction: column;
+}
+.registration-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+}
+.registration-actions .btn {
+  flex: 1;
+}
+.organizer-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.organizer-actions .btn {
+  flex: 1;
+}
+.organizer-scan-btn {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+.modal-card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--white-color);
+  border-radius: 20px;
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+.scan-reader {
+  width: 100%;
+  border-radius: 14px;
+  background: #111;
+  min-height: 220px;
+  position: relative;
+  overflow: hidden;
+}
+.scan-reader video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 @media (max-width: 900px) { .event-layout { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -27,47 +148,90 @@
   <div class="card">
     <h2 style="font-size: 24px;">О мероприятии</h2>
     <div class="event-meta">
-      <div><strong>Дата:</strong> <span id="eventDateFull">—</span></div>
-      <div><strong>Адрес:</strong> <span id="eventAddressFull">—</span></div>
+      <div><span class="event-pill event-pill-date">🕒 <span id="eventDateFull">—</span></span></div>
+      <div><span class="event-pill event-pill-address">📍 <span id="eventAddressFull">—</span></span></div>
       <div><strong>Цена:</strong> <span id="eventPrice">Бесплатно</span></div>
     </div>
     <h3 style="margin-top:20px; font-size:20px;">Описание</h3>
     <p id="eventDescription" style="margin-top:8px; color: var(--black-600);"></p>
 
     <h3 style="margin-top:20px; font-size:20px;">Организатор</h3>
-    <div style="margin-top:10px; color: var(--black-600);">
-      <div id="organizerFullName">—</div>
-      <div id="organizerUniversity">—</div>
-      <div id="organizerTelegram" class="hidden"><a id="telegramLink" href="#" target="_blank"></a></div>
+    <div class="organizer-block">
+      <div class="organizer-avatar" id="organizerAvatarWrap">
+        <img id="organizerAvatarImage" class="hidden" alt="Фото организатора">
+        <span id="organizerAvatarFallback">?</span>
+      </div>
+      <div>
+        <div id="organizerFullName">—</div>
+        <div id="organizerPlace" class="hidden"></div>
+        <div id="organizerTelegram" class="hidden"><a id="telegramLink" href="#" target="_blank"></a></div>
+      </div>
     </div>
   </div>
 
-  <div class="card">
+  <div class="card registration-card">
     <h3 style="font-size:20px;">Регистрация</h3>
     <p id="registerInfo" style="margin:12px 0;color:var(--grey-color);">Зарегистрируйтесь, чтобы участвовать</p>
-    <button id="registerBtn" class="btn btn-primary" style="width:100%;" disabled>Зарегистрироваться</button>
     <p id="registerStatus" style="margin-top:10px;font-size:14px;"></p>
+    <div class="registration-actions">
+      <button id="registerBtn" class="btn btn-primary" disabled>Зарегистрироваться</button>
+      <button id="cancelRegisterBtn" class="btn btn-outline hidden" disabled>Отмена</button>
+    </div>
 
     <div class="hidden" id="organizerPanel" style="margin-top:20px;">
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
-        <a id="editEventBtn" class="btn btn-outline" href="#">Редактировать</a>
+      <button id="scanTicketsBtn" class="btn btn-primary organizer-scan-btn">Скан билетов</button>
+      <div class="organizer-actions" style="margin-bottom:16px;">
+        <a id="editEventBtn" class="btn btn-outline" href="#">Редактирование</a>
+        <button id="cancelEventBtn" class="btn btn-danger">Отмена</button>
       </div>
-      <h3 style="font-size:18px;">Участники (<span id="participantsCount">0</span>)</h3>
-      <table style="width:100%;margin-top:10px;border-collapse:collapse;">
-        <thead><tr><th align="left">ФИО</th><th align="left">Telegram</th></tr></thead>
-        <tbody id="participantsList"></tbody>
-      </table>
     </div>
   </div>
 </section>
+
+<section id="participantsSection" class="card participants-section hidden">
+  <h3 style="font-size:20px;">Участники (<span id="participantsCount">0</span>)</h3>
+  <div class="participants-table-wrapper">
+    <table class="participants-table">
+      <thead>
+        <tr>
+          <th>ФИО</th>
+          <th>Telegram</th>
+          <th>ВУЗ</th>
+          <th>Место работы</th>
+          <th>Пришел</th>
+        </tr>
+      </thead>
+      <tbody id="participantsList"></tbody>
+    </table>
+  </div>
+</section>
+
+<div id="scanModal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <h3 style="font-size:22px;">Скан билетов</h3>
+      <button id="scanModalClose" class="btn btn-outline">Закрыть</button>
+    </div>
+    <div id="scanReader" class="scan-reader"></div>
+    <p id="scanStatus" style="color:var(--black-600);">Наведите камеру на QR-код билета</p>
+    <div class="form-group" style="margin-bottom:0;">
+      <label for="scanManualInput">Или вставьте ссылку вручную</label>
+      <input id="scanManualInput" type="text" placeholder="https://.../ticket-scan?eventId=...&userId=...">
+    </div>
+    <button id="scanManualSubmit" class="btn btn-primary">Проверить ссылку</button>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 const urlParams = new URLSearchParams(window.location.search);
 const eventId = urlParams.get('id');
 let defaultCovers = null;
 let currentEvent = null;
+let scanQrInstance = null;
+let scanInProgress = false;
 
 async function fetchDefaultCovers() {
   if (defaultCovers !== null) return defaultCovers;
@@ -135,6 +299,132 @@ function renderEventTags(event) {
   return tags.map((tag) => `<span class="event-tag ${getEventTagClass(tag)}">${getEventTagLabel(tag)}</span>`).join('');
 }
 
+function getInitials(name) {
+  return String(name || '')
+    .split(' ')
+    .map((item) => item[0]?.toUpperCase())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('') || '?';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatMoscowDateTime(value) {
+  return new Date(value).toLocaleString('ru-RU', {
+    day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Moscow'
+  });
+}
+
+async function submitScannedLink(scanUrl) {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    window.location.href = '/login';
+    return;
+  }
+
+  const response = await fetch('/api/tickets/scan-link', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ scanUrl })
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    document.getElementById('scanStatus').textContent = payload?.message || 'Ошибка сканирования';
+    document.getElementById('scanStatus').style.color = 'var(--red-color)';
+    return false;
+  }
+
+  const participant = payload?.participant || {};
+  document.getElementById('scanStatus').textContent = `✅ ${participant.fullName || 'Участник'} отмечен`;
+  document.getElementById('scanStatus').style.color = 'var(--green-color)';
+  await refreshParticipants();
+  return true;
+}
+
+async function startTicketScanner() {
+  const statusEl = document.getElementById('scanStatus');
+  if (!window.Html5Qrcode) {
+    statusEl.textContent = 'Камера не поддерживается. Вставьте ссылку вручную.';
+    statusEl.style.color = 'var(--orange-tag-color)';
+    return;
+  }
+
+  if (scanInProgress) return;
+  scanInProgress = true;
+
+  try {
+    const reader = document.getElementById('scanReader');
+    reader.innerHTML = '';
+    scanQrInstance = new Html5Qrcode('scanReader');
+    await scanQrInstance.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: 220 },
+      async (decodedText) => {
+        const done = await submitScannedLink(decodedText);
+        if (done) {
+          stopTicketScanner();
+        }
+      },
+      () => {}
+    );
+  } catch {
+    scanInProgress = false;
+    statusEl.textContent = 'Не удалось открыть камеру. Вставьте ссылку вручную.';
+    statusEl.style.color = 'var(--orange-tag-color)';
+  }
+}
+
+function stopTicketScanner() {
+  const reader = document.getElementById('scanReader');
+  if (!scanQrInstance) {
+    scanInProgress = false;
+    reader.innerHTML = '';
+    return;
+  }
+
+  scanQrInstance.stop()
+    .catch(() => {})
+    .finally(() => {
+      scanQrInstance?.clear().catch(() => {});
+      scanQrInstance = null;
+      scanInProgress = false;
+      reader.innerHTML = '';
+    });
+}
+
+function openScanModal() {
+  const modal = document.getElementById('scanModal');
+  modal.classList.remove('hidden');
+  document.getElementById('scanStatus').textContent = 'Наведите камеру на QR-код билета';
+  document.getElementById('scanStatus').style.color = 'var(--black-600)';
+  document.getElementById('scanManualInput').value = '';
+  startTicketScanner();
+}
+
+function closeScanModal() {
+  document.getElementById('scanModal').classList.add('hidden');
+  stopTicketScanner();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   if (!eventId) { window.location.href = '/main'; return; }
   await loadEvent(eventId);
@@ -148,8 +438,8 @@ async function loadEvent(id) {
   currentEvent = event;
 
   document.getElementById('eventTitle').textContent = event.title;
-  document.getElementById('eventDateTime').textContent = new Date(event.eventDate).toLocaleString('ru-RU');
-  document.getElementById('eventDateFull').textContent = new Date(event.eventDate).toLocaleString('ru-RU');
+  document.getElementById('eventDateTime').textContent = formatMoscowDateTime(event.eventDate);
+  document.getElementById('eventDateFull').textContent = formatMoscowDateTime(event.eventDate);
   document.getElementById('eventAddressFull').textContent = event.address;
   document.getElementById('eventDescription').textContent = event.description || '';
   document.getElementById('eventPrice').textContent = event.isPaid && event.price ? `${event.price} ₽` : 'Бесплатно';
@@ -159,7 +449,27 @@ async function loadEvent(id) {
   await setCoverWithFallback(event.coverUrl, event.id);
 
   document.getElementById('organizerFullName').textContent = event.organizer.fullName;
-  document.getElementById('organizerUniversity').textContent = event.organizer.university;
+  const organizerPlaceEl = document.getElementById('organizerPlace');
+  const organizerPlace = event.organizer.displayPlace || event.organizer.university || '';
+  if (organizerPlace) {
+    organizerPlaceEl.textContent = organizerPlace;
+    organizerPlaceEl.classList.remove('hidden');
+  } else {
+    organizerPlaceEl.textContent = '';
+    organizerPlaceEl.classList.add('hidden');
+  }
+  document.getElementById('organizerAvatarFallback').textContent = getInitials(event.organizer.fullName);
+  if (event.organizer.hasPhoto) {
+    const avatarResponse = await fetch(`/api/users/${event.organizer.id}/photo`);
+    if (avatarResponse.ok) {
+      const avatarBlob = await avatarResponse.blob();
+      const avatarUrl = URL.createObjectURL(avatarBlob);
+      const avatarImage = document.getElementById('organizerAvatarImage');
+      avatarImage.src = avatarUrl;
+      avatarImage.classList.remove('hidden');
+      document.getElementById('organizerAvatarFallback').classList.add('hidden');
+    }
+  }
   if (event.organizer.telegram) {
     document.getElementById('organizerTelegram').classList.remove('hidden');
     document.getElementById('telegramLink').href = `https://t.me/${event.organizer.telegram.replace('@','')}`;
@@ -167,10 +477,12 @@ async function loadEvent(id) {
   }
 
   const registerBtn = document.getElementById('registerBtn');
+  const cancelRegisterBtn = document.getElementById('cancelRegisterBtn');
   const user = JSON.parse(localStorage.getItem('user'));
   if (user) {
     registerBtn.disabled = false;
     registerBtn.onclick = () => registerForEvent(id);
+    cancelRegisterBtn.onclick = () => cancelEventRegistration(id);
     await updateRegistrationState(id, user.id);
   }
 }
@@ -183,7 +495,22 @@ function checkAuthAndPermissions(eventId) {
     .then((event) => {
       if (event.organizerId === user.id) {
         document.getElementById('organizerPanel').classList.remove('hidden');
+        document.getElementById('participantsSection').classList.remove('hidden');
         document.getElementById('editEventBtn').href = `/edit-event?id=${eventId}`;
+        document.getElementById('scanTicketsBtn').onclick = openScanModal;
+        document.getElementById('cancelEventBtn').onclick = async () => {
+          const confirmed = window.confirm('Отменить мероприятие?');
+          if (!confirmed) return;
+          const response = await fetch(`/api/events/${eventId}/cancel`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+          if (!response.ok) {
+            window.alert('Не удалось отменить мероприятие');
+            return;
+          }
+          window.location.href = '/my-events';
+        };
         refreshParticipants(eventId);
       }
     });
@@ -194,7 +521,16 @@ async function refreshParticipants(eventIdParam = eventId) {
   if (!response.ok) return;
   const participants = await response.json();
   document.getElementById('participantsCount').textContent = participants.length;
-  document.getElementById('participantsList').innerHTML = participants.map((p) => `<tr><td>${p.fullName}</td><td>${p.telegram || '—'}</td></tr>`).join('');
+  const rows = participants.map((participant) => `
+    <tr>
+      <td>${escapeHtml(participant.fullName || '—')}</td>
+      <td>${escapeHtml(participant.telegram || '—')}</td>
+      <td>${escapeHtml(participant.university || '—')}</td>
+      <td>${escapeHtml(participant.workPlace || '—')}</td>
+      <td>${participant.checkedIn ? '✅' : '—'}</td>
+    </tr>
+  `).join('');
+  document.getElementById('participantsList').innerHTML = rows || '<tr><td colspan="5">Пока нет участников</td></tr>';
 }
 
 async function updateRegistrationState(eventId, userId) {
@@ -204,6 +540,7 @@ async function updateRegistrationState(eventId, userId) {
   if (!response.ok) return;
   const registrations = await response.json();
   const registerBtn = document.getElementById('registerBtn');
+  const cancelRegisterBtn = document.getElementById('cancelRegisterBtn');
   const statusEl = document.getElementById('registerStatus');
   const registration = Array.isArray(registrations)
     ? registrations.find((row) => String(row?.event?.id) === String(eventId))
@@ -214,24 +551,30 @@ async function updateRegistrationState(eventId, userId) {
     registerBtn.className = 'btn btn-primary';
     registerBtn.disabled = false;
     registerBtn.onclick = () => registerForEvent(eventId);
+    cancelRegisterBtn.classList.add('hidden');
+    cancelRegisterBtn.disabled = true;
     statusEl.textContent = '';
     return;
   }
 
   const eventIsPast = currentEvent ? new Date(currentEvent.eventDate) <= new Date() : false;
   if (eventIsPast) {
-    registerBtn.textContent = '✓ Зарегистрированы';
+    registerBtn.textContent = 'Зарегистрированы';
     registerBtn.className = 'btn btn-success';
     registerBtn.disabled = true;
+    cancelRegisterBtn.classList.add('hidden');
+    cancelRegisterBtn.disabled = true;
     statusEl.textContent = 'Регистрация уже подтверждена';
     statusEl.style.color = 'var(--green-color)';
     return;
   }
 
-  registerBtn.textContent = 'Отменить регистрацию';
-  registerBtn.className = 'btn btn-outline';
-  registerBtn.disabled = false;
-  registerBtn.onclick = () => cancelEventRegistration(eventId);
+  registerBtn.textContent = 'Зарегистрированы';
+  registerBtn.className = 'btn btn-success';
+  registerBtn.disabled = true;
+  cancelRegisterBtn.classList.remove('hidden');
+  cancelRegisterBtn.disabled = false;
+  cancelRegisterBtn.onclick = () => cancelEventRegistration(eventId);
   statusEl.textContent = 'Вы зарегистрированы на это мероприятие';
   statusEl.style.color = 'var(--green-color)';
 }
@@ -293,5 +636,15 @@ async function cancelEventRegistration(eventId) {
   statusEl.textContent = payload?.message || 'Не удалось отменить регистрацию';
   statusEl.style.color = 'var(--red-color)';
 }
+
+document.getElementById('scanModalClose')?.addEventListener('click', closeScanModal);
+document.getElementById('scanModal')?.addEventListener('click', (event) => {
+  if (event.target.id === 'scanModal') closeScanModal();
+});
+document.getElementById('scanManualSubmit')?.addEventListener('click', async () => {
+  const value = document.getElementById('scanManualInput').value.trim();
+  if (!value) return;
+  await submitScannedLink(value);
+});
 </script>
 {% endblock %}
